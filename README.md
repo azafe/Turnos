@@ -41,6 +41,12 @@ npm install
 npm run dev
 ```
 
+## Deploy en Netlify
+1. Conecta el repositorio en Netlify.
+2. Build command: `npm run build`
+3. Publish directory: `dist`
+4. El archivo `netlify.toml` ya deja configurado el fallback SPA (`/* -> /index.html`).
+
 ## Validar
 ```bash
 npm run lint
