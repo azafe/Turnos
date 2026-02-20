@@ -42,6 +42,7 @@ function App() {
   const [data, setData] = useState<TurneroData>(() => readStoredData())
   const [generatedData, setGeneratedData] = useState<TurneroData | null>(null)
   const [hasPendingGeneration, setHasPendingGeneration] = useState(true)
+  const [isHeaderCompact, setIsHeaderCompact] = useState(false)
   const [statusMessage, setStatusMessage] = useState('')
   const [selectedAgendaDate, setSelectedAgendaDate] = useState('')
   const [controllerQuery, setControllerQuery] = useState('')
@@ -259,6 +260,36 @@ function App() {
     monthWeekdayBlocks.length +
     monthDateBlocks.length +
     monthForcedAssignments.length
+
+  useEffect(() => {
+    const mediaQuery = window.matchMedia('(max-width: 760px)')
+
+    const syncCompactState = (): void => {
+      if (!mediaQuery.matches) {
+        setIsHeaderCompact(false)
+        return
+      }
+      setIsHeaderCompact(window.scrollY > 24)
+    }
+
+    syncCompactState()
+    window.addEventListener('scroll', syncCompactState, { passive: true })
+
+    if (typeof mediaQuery.addEventListener === 'function') {
+      mediaQuery.addEventListener('change', syncCompactState)
+    } else {
+      mediaQuery.addListener(syncCompactState)
+    }
+
+    return () => {
+      window.removeEventListener('scroll', syncCompactState)
+      if (typeof mediaQuery.removeEventListener === 'function') {
+        mediaQuery.removeEventListener('change', syncCompactState)
+      } else {
+        mediaQuery.removeListener(syncCompactState)
+      }
+    }
+  }, [])
 
   useEffect(() => {
     localStorage.setItem(STORAGE_KEY, JSON.stringify(data))
@@ -579,6 +610,7 @@ function App() {
         year={FIXED_YEAR}
         hasPendingGeneration={hasPendingGeneration}
         hasSchedule={Boolean(schedule)}
+        isCompact={isHeaderCompact}
         onGenerate={generateMonthList}
         onExportPdf={onExportPdf}
         onReset={resetAll}
@@ -1519,6 +1551,7 @@ function Header({
   year,
   hasPendingGeneration,
   hasSchedule,
+  isCompact,
   onGenerate,
   onExportPdf,
   onReset,
@@ -1527,12 +1560,13 @@ function Header({
   year: number
   hasPendingGeneration: boolean
   hasSchedule: boolean
+  isCompact: boolean
   onGenerate: () => void
   onExportPdf: () => void
   onReset: () => void
 }) {
   return (
-    <header className="hero sticky-ops">
+    <header className={isCompact ? 'hero sticky-ops compact' : 'hero sticky-ops'}>
       <div>
         <p className="brand">EANA | Torre de Control</p>
         <h1>Control Room Scheduler</h1>
@@ -1548,10 +1582,10 @@ function Header({
         <button className="button min-touch" onClick={onGenerate}>
           Generar lista
         </button>
-        <button className="button min-touch" onClick={onExportPdf} disabled={!hasSchedule}>
+        <button className="button ghost-dark min-touch" onClick={onExportPdf} disabled={!hasSchedule}>
           PDF
         </button>
-        <button className="button danger min-touch" onClick={onReset}>
+        <button className="button subtle-danger min-touch" onClick={onReset}>
           Restablecer
         </button>
       </div>
