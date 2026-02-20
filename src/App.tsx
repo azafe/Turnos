@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react'
+import { type ReactNode, useEffect, useMemo, useState } from 'react'
 import './App.css'
 import { MONTH_LABELS, ROLE_OPTIONS, WEEKDAY_OPTIONS, createSeedData } from './defaults'
 import { exportToPdf } from './pdf'
@@ -574,27 +574,15 @@ function App() {
 
   return (
     <div className="app-shell">
-      <header className="hero">
-        <div>
-          <p className="brand">EANA | Torre de Control</p>
-          <h1>Turnero mensual</h1>
-          <p className="subtitle">
-            UTC fijo -3. A {SHIFT_CONFIG.A.local} local ({SHIFT_CONFIG.A.utc} UTC) | B {SHIFT_CONFIG.B.local} local ({SHIFT_CONFIG.B.utc} UTC) | C {SHIFT_CONFIG.C.local} local ({SHIFT_CONFIG.C.utc} UTC)
-          </p>
-        </div>
-
-        <div className="hero-actions">
-          <button className="button" onClick={generateMonthList}>
-            Generar lista del mes
-          </button>
-          <button className="button" onClick={onExportPdf} disabled={!schedule}>
-            Exportar PDF
-          </button>
-          <button className="button danger" onClick={resetAll}>
-            Restablecer base
-          </button>
-        </div>
-      </header>
+      <Header
+        month={data.month}
+        year={FIXED_YEAR}
+        hasPendingGeneration={hasPendingGeneration}
+        hasSchedule={Boolean(schedule)}
+        onGenerate={generateMonthList}
+        onExportPdf={onExportPdf}
+        onReset={resetAll}
+      />
 
       <section className="workflow-strip">
         <div className={monthConstraintsCount > 0 ? 'workflow-step done' : 'workflow-step'}>
@@ -699,6 +687,12 @@ function App() {
         </button>
       </nav>
 
+      {hasPendingGeneration ? (
+        <section className="invalidated-banner">
+          Se detectaron cambios en datos o condicionantes. Genera nuevamente la lista para ver resultados actualizados.
+        </section>
+      ) : null}
+
       {activeTab === 'mes' ? (
         <main className="content-grid">
           <article className="panel">
@@ -778,7 +772,9 @@ function App() {
                           {controller.name}
                         </button>
                       </td>
-                      <td>{roleLabel(controller.role)}</td>
+                      <td>
+                        <RoleBadge role={controller.role} />
+                      </td>
                       <td>{controller.condition || '-'}</td>
                       <td>{controller.pending}</td>
                     </tr>
@@ -797,7 +793,7 @@ function App() {
                   </div>
                   <div className="stack-grid">
                     <p>
-                      <strong>Cargo:</strong> {roleLabel(controller.role)}
+                      <strong>Cargo:</strong> <RoleBadge role={controller.role} compact />
                     </p>
                     <p>
                       <strong>Pendiente:</strong> {controller.pending}
@@ -817,7 +813,7 @@ function App() {
             />
           </article>
 
-          <article className="panel">
+          <ConditionalPanel>
             <h2>Condicionantes</h2>
 
             <details open>
@@ -1112,13 +1108,9 @@ function App() {
                 }
               />
             </details>
-          </article>
+          </ConditionalPanel>
 
-          <article className="panel schedule-panel">
-            <h2>
-              Planilla mensual ({MONTH_LABELS[data.month - 1]} {data.year})
-            </h2>
-
+          <MonthlyView month={data.month} year={FIXED_YEAR}>
             {data.monthlyNotes ? <p className="monthly-note">Notas: {data.monthlyNotes}</p> : null}
 
             {schedule ? (
@@ -1126,82 +1118,35 @@ function App() {
                 <p className="dim">
                   Mostrando dias {schedulePagination.startItem}-{schedulePagination.endItem} de {schedulePagination.totalItems}
                 </p>
-                <div className="table-wrapper desktop-only">
-                  <table className="schedule-table">
-                    <thead>
-                      <tr>
-                        <th>Fecha</th>
-                        <th>Turno A</th>
-                        <th>Turno B</th>
-                        <th>Turno C</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {schedulePagination.items.map((day) => (
-                        <tr key={day.date}>
-                          <td>
-                            <strong>{formatDate(day.date)}</strong>
-                            <div className="dim">{day.dayLabel}</div>
-                          </td>
-
-                          {SHIFT_ORDER.map((shift) => {
-                            const plan = day.shifts[shift]
-                            return (
-                              <td key={`${day.date}-${shift}`}>
-                                <div className="shift-meta">
-                                  <span>
-                                    {plan.assignedControllerIds.length}/{plan.required}
-                                  </span>
-                                  <small>
-                                    {SHIFT_CONFIG[shift].local} | {SHIFT_CONFIG[shift].utc} UTC
-                                  </small>
-                                </div>
-
-                                <ul className="assignment-list">
-                                  {plan.assignedControllerIds.map((controllerId) => (
-                                    <li key={controllerId}>{nameById(controllerById, controllerId)}</li>
-                                  ))}
-                                </ul>
-
-                                {plan.conflicts.length ? (
-                                  <ul className="conflict-list">
-                                    {plan.conflicts.map((conflict, index) => (
-                                      <li key={`${shift}-${index}`}>{conflict}</li>
-                                    ))}
-                                  </ul>
-                                ) : null}
-                              </td>
-                            )
-                          })}
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
-
-                <div className="mobile-only stack-list">
+                <div className="day-grid">
                   {schedulePagination.items.map((day) => (
-                    <article key={`mobile-day-${day.date}`} className="stack-card">
-                      <h3>
-                        {formatDate(day.date)} <span className="dim">({day.dayLabel})</span>
-                      </h3>
+                    <article key={`day-${day.date}`} className="day-card">
+                      <div className="day-card-head">
+                        <h3>
+                          {formatDate(day.date)} <span className="dim">({day.dayLabel})</span>
+                        </h3>
+                      </div>
                       {SHIFT_ORDER.map((shift) => {
                         const plan = day.shifts[shift]
                         return (
-                          <section key={`mobile-${day.date}-${shift}`} className="stack-shift">
-                            <p>
-                              <strong>Turno {shift}:</strong> {plan.assignedControllerIds.length}/{plan.required}
+                          <section key={`day-${day.date}-${shift}`} className="shift-card">
+                            <p className="shift-title">
+                              <strong>Turno {shift}</strong>
+                              <span>
+                                {plan.assignedControllerIds.length}/{plan.required}
+                              </span>
                             </p>
                             <p className="dim">
                               {SHIFT_CONFIG[shift].local} local | {SHIFT_CONFIG[shift].utc} UTC
                             </p>
-                            <ul className="assignment-list">
+                            <div className="assignment-pills">
                               {plan.assignedControllerIds.map((controllerId) => (
-                                <li key={`${day.date}-${shift}-${controllerId}`}>
-                                  {nameById(controllerById, controllerId)}
-                                </li>
+                                <ControllerAssignmentTag
+                                  key={`pill-${day.date}-${shift}-${controllerId}`}
+                                  controller={controllerById[controllerId]}
+                                />
                               ))}
-                            </ul>
+                            </div>
                             {plan.conflicts.length ? (
                               <ul className="conflict-list">
                                 {plan.conflicts.map((conflict, index) => (
@@ -1230,7 +1175,7 @@ function App() {
                 </button>
               </div>
             )}
-          </article>
+          </MonthlyView>
         </main>
       ) : null}
 
@@ -1323,7 +1268,7 @@ function App() {
 
       {activeTab === 'estadisticas' ? (
         <main className="content-grid">
-          <article className="panel">
+          <StatsView>
             <h2>Estadisticas por controlador</h2>
             <div className="search-row">
               <input
@@ -1417,7 +1362,7 @@ function App() {
                 </button>
               </div>
             )}
-          </article>
+          </StatsView>
 
           <article className="panel">
             <h2>Resumen del mes</h2>
@@ -1569,6 +1514,96 @@ function ConstraintList({
   )
 }
 
+function Header({
+  month,
+  year,
+  hasPendingGeneration,
+  hasSchedule,
+  onGenerate,
+  onExportPdf,
+  onReset,
+}: {
+  month: number
+  year: number
+  hasPendingGeneration: boolean
+  hasSchedule: boolean
+  onGenerate: () => void
+  onExportPdf: () => void
+  onReset: () => void
+}) {
+  return (
+    <header className="hero sticky-ops">
+      <div>
+        <p className="brand">EANA | Torre de Control</p>
+        <h1>Control Room Scheduler</h1>
+        <p className="subtitle">
+          Mes activo: <strong>{MONTH_LABELS[month - 1]} {year}</strong> | Estado:{' '}
+          <span className={hasSchedule ? 'status-pill success' : hasPendingGeneration ? 'status-pill warning' : 'status-pill'}>
+            {hasSchedule ? 'Generada' : hasPendingGeneration ? 'Pendiente' : 'Sin generar'}
+          </span>
+        </p>
+      </div>
+
+      <div className="hero-actions">
+        <button className="button min-touch" onClick={onGenerate}>
+          Generar lista
+        </button>
+        <button className="button min-touch" onClick={onExportPdf} disabled={!hasSchedule}>
+          PDF
+        </button>
+        <button className="button danger min-touch" onClick={onReset}>
+          Restablecer
+        </button>
+      </div>
+    </header>
+  )
+}
+
+function ConditionalPanel({ children }: { children: ReactNode }) {
+  return <article className="panel panel-depth">{children}</article>
+}
+
+function MonthlyView({
+  month,
+  year,
+  children,
+}: {
+  month: number
+  year: number
+  children: ReactNode
+}) {
+  return (
+    <article className="panel schedule-panel panel-depth">
+      <h2>
+        Planilla mensual ({MONTH_LABELS[month - 1]} {year})
+      </h2>
+      {children}
+    </article>
+  )
+}
+
+function StatsView({ children }: { children: ReactNode }) {
+  return <article className="panel panel-depth">{children}</article>
+}
+
+function ControllerAssignmentTag({ controller }: { controller?: Controller }) {
+  if (!controller) {
+    return <span className="assignment-pill">N/D</span>
+  }
+
+  return (
+    <span className="assignment-pill">
+      <RoleBadge role={controller.role} compact />
+      <span>{controller.name}</span>
+    </span>
+  )
+}
+
+function RoleBadge({ role, compact = false }: { role: ControllerRole; compact?: boolean }) {
+  const text = compact ? roleShort(role) : roleLabel(role)
+  return <span className={`role-badge role-${role.toLowerCase()}`}>{text}</span>
+}
+
 function Pagination({
   page,
   totalPages,
@@ -1699,6 +1734,25 @@ function createId(prefix: string): string {
 
 function roleLabel(role: ControllerRole): string {
   return ROLE_OPTIONS.find((item) => item.value === role)?.label ?? role
+}
+
+function roleShort(role: ControllerRole): string {
+  if (role === 'JEFE_DEPENDENCIA') {
+    return 'JD'
+  }
+  if (role === 'SUPERVISOR') {
+    return 'SUP'
+  }
+  if (role === 'INSTRUCTOR') {
+    return 'INST'
+  }
+  if (role === 'OPERADOR') {
+    return 'OP'
+  }
+  if (role === 'PRACTICANTE') {
+    return 'PRAC'
+  }
+  return 'ADS'
 }
 
 function nameById(controllers: Record<string, Controller>, controllerId: string): string {
