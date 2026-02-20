@@ -11,7 +11,9 @@ Aplicacion web para planificar turnos mensuales de torre de control, con estruct
 ## Funcionalidades
 - Dotacion inicial precargada con nombres/cargos tomados del Excel compartido.
 - Alta de controladores nuevos.
-- Edicion por modal al hacer click en el nombre del controlador.
+- Edicion por modal al hacer click en el nombre del controlador (incluye eliminar controlador).
+- Generacion manual con boton `Generar lista del mes` para aplicar condicionantes antes de ver resultados.
+- Año operativo bloqueado en `2026`.
 - Condicionantes mensuales:
   - Cobertura puntual por fecha y turno.
   - Vacaciones/licencias por rango.
@@ -32,7 +34,6 @@ Aplicacion web para planificar turnos mensuales de torre de control, con estruct
 - Pestaña `Agenda`: almanaque para consultar rapidamente quien esta de turno cada dia.
 - Pestaña `Estadisticas`: conteos por controlador.
 - Exportacion:
-  - Excel (`MES`, `ESTADISTICAS`).
   - PDF con estructura de planilla + pagina de estadisticas.
 
 ## Ejecutar

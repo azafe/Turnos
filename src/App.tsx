@@ -1,7 +1,6 @@
 import { useEffect, useMemo, useState } from 'react'
 import './App.css'
 import { MONTH_LABELS, ROLE_OPTIONS, WEEKDAY_OPTIONS, createSeedData } from './defaults'
-import { exportToExcel, importFromExcel } from './excel'
 import { exportToPdf } from './pdf'
 import { SHIFT_CONFIG, SHIFT_ORDER, buildMonthDates, computeStats, generateMonthlySchedule } from './scheduler'
 import {
@@ -17,6 +16,7 @@ import {
 } from './types'
 
 const STORAGE_KEY = 'turnero_eana_v2'
+const FIXED_YEAR = 2026
 
 type TabId = 'mes' | 'agenda' | 'estadisticas'
 
@@ -37,6 +37,8 @@ const EMPTY_CONTROLLER_DRAFT: ControllerDraft = {
 function App() {
   const [activeTab, setActiveTab] = useState<TabId>('mes')
   const [data, setData] = useState<TurneroData>(() => readStoredData())
+  const [generatedData, setGeneratedData] = useState<TurneroData | null>(null)
+  const [hasPendingGeneration, setHasPendingGeneration] = useState(true)
   const [statusMessage, setStatusMessage] = useState('')
   const [selectedAgendaDate, setSelectedAgendaDate] = useState('')
 
@@ -88,8 +90,16 @@ function App() {
   const monthDates = useMemo(() => buildMonthDates(data.year, data.month), [data.year, data.month])
   const defaultDate = monthDates[0] ?? ''
 
-  const schedule = useMemo(() => generateMonthlySchedule(data), [data])
-  const statsMap = useMemo(() => computeStats(data, schedule), [data, schedule])
+  const schedule = useMemo(
+    () => (generatedData ? generateMonthlySchedule(generatedData) : null),
+    [generatedData],
+  )
+  const statsMap = useMemo(() => {
+    if (!generatedData || !schedule) {
+      return {}
+    }
+    return computeStats(generatedData, schedule)
+  }, [generatedData, schedule])
 
   const controllerById = useMemo(
     () =>
@@ -101,26 +111,35 @@ function App() {
   )
 
   const dayPlanByDate = useMemo(
-    () =>
-      schedule.days.reduce<Record<string, (typeof schedule.days)[number]>>((acc, day) => {
+    () => {
+      if (!schedule) {
+        return {}
+      }
+      return schedule.days.reduce<Record<string, (typeof schedule.days)[number]>>((acc, day) => {
         acc[day.date] = day
         return acc
-      }, {}),
+      }, {})
+    },
     [schedule],
   )
 
   const totalConflicts = useMemo(
-    () =>
-      schedule.days.reduce(
+    () => {
+      if (!schedule) {
+        return 0
+      }
+      return schedule.days.reduce(
         (acc, day) => acc + SHIFT_ORDER.reduce((sum, shift) => sum + day.shifts[shift].conflicts.length, 0),
         0,
-      ),
+      )
+    },
     [schedule],
   )
 
   const statsRows = useMemo(
-    () =>
-      data.controllers.map((controller) => {
+    () => {
+      const sourceControllers = generatedData?.controllers ?? data.controllers
+      return sourceControllers.map((controller) => {
         const stats = statsMap[controller.id]
         return {
           nombre: controller.name,
@@ -134,8 +153,9 @@ function App() {
           feriados: stats?.holidayShifts ?? 0,
           pendientes: stats?.pending ?? controller.pending,
         }
-      }),
-    [data.controllers, statsMap],
+      })
+    },
+    [data.controllers, generatedData, statsMap],
   )
 
   const agendaDate = monthDates.includes(selectedAgendaDate) ? selectedAgendaDate : defaultDate
@@ -148,7 +168,15 @@ function App() {
   }, [data])
 
   const handleDataUpdate = (updater: (current: TurneroData) => TurneroData): void => {
-    setData((current) => updater(current))
+    setData((current) => {
+      const updated = updater(current)
+      return {
+        ...updated,
+        year: FIXED_YEAR,
+      }
+    })
+    setGeneratedData(null)
+    setHasPendingGeneration(true)
   }
 
   const defaultControllerId = data.controllers[0]?.id ?? ''
@@ -377,13 +405,12 @@ function App() {
     setHolidayForm((current) => ({ ...current, name: '' }))
   }
 
-  const updateMonthYear = (year: number, month: number): void => {
-    const safeYear = Math.max(2020, Math.min(2100, year))
+  const updateMonth = (month: number): void => {
     const safeMonth = Math.max(1, Math.min(12, month))
 
     handleDataUpdate((current) => ({
       ...current,
-      year: safeYear,
+      year: FIXED_YEAR,
       month: safeMonth,
     }))
 
@@ -392,41 +419,37 @@ function App() {
 
   const resetAll = (): void => {
     const today = new Date()
-    setData(createSeedData(today.getFullYear(), today.getMonth() + 1))
+    setData(createSeedData(FIXED_YEAR, today.getMonth() + 1))
+    setGeneratedData(null)
+    setHasPendingGeneration(true)
     setSelectedAgendaDate('')
     setStatusMessage('Se restablecio la planificacion con la dotacion base del Excel.')
   }
 
-  const onImportExcel = async (event: React.ChangeEvent<HTMLInputElement>): Promise<void> => {
-    const file = event.target.files?.[0]
-    event.target.value = ''
-
-    if (!file) {
+  const generateMonthList = (): void => {
+    if (!data.controllers.length) {
+      setStatusMessage('No hay controladores para generar la lista.')
       return
     }
 
-    try {
-      const result = await importFromExcel(file)
-      setData(result.data)
-      setSelectedAgendaDate('')
-      setStatusMessage(
-        result.warnings.length
-          ? `Importado con avisos: ${result.warnings.join(' | ')}`
-          : 'Excel importado correctamente.',
-      )
-    } catch (error) {
-      const message = error instanceof Error ? error.message : 'Error al importar archivo.'
-      setStatusMessage(`Importacion fallida: ${message}`)
-    }
-  }
+    const nextGeneratedData = cloneData({
+      ...data,
+      year: FIXED_YEAR,
+    })
 
-  const onExportExcel = (): void => {
-    exportToExcel(data, schedule, statsRows)
-    setStatusMessage('Archivo Excel exportado.')
+    setGeneratedData(nextGeneratedData)
+    setHasPendingGeneration(false)
+    setSelectedAgendaDate('')
+    setStatusMessage(`Lista generada para ${MONTH_LABELS[data.month - 1]} ${FIXED_YEAR}.`)
   }
 
   const onExportPdf = (): void => {
-    exportToPdf(data, schedule, statsRows)
+    if (!generatedData || !schedule) {
+      setStatusMessage('Primero debes generar la lista del mes para exportar PDF.')
+      return
+    }
+
+    exportToPdf(generatedData, schedule, statsRows)
     setStatusMessage('Archivo PDF exportado.')
   }
 
@@ -442,14 +465,10 @@ function App() {
         </div>
 
         <div className="hero-actions">
-          <label className="button ghost" htmlFor="excel-import">
-            Importar Excel
-          </label>
-          <input id="excel-import" className="hidden-input" type="file" accept=".xlsx,.xls" onChange={onImportExcel} />
-          <button className="button" onClick={onExportExcel}>
-            Exportar Excel
+          <button className="button" onClick={generateMonthList}>
+            Generar lista del mes
           </button>
-          <button className="button" onClick={onExportPdf}>
+          <button className="button" onClick={onExportPdf} disabled={!schedule}>
             Exportar PDF
           </button>
           <button className="button danger" onClick={resetAll}>
@@ -464,7 +483,7 @@ function App() {
           <div className="row-inline">
             <label>
               Mes
-              <select value={data.month} onChange={(event) => updateMonthYear(data.year, Number(event.target.value))}>
+              <select value={data.month} onChange={(event) => updateMonth(Number(event.target.value))}>
                 {MONTH_LABELS.map((monthLabel, index) => (
                   <option key={monthLabel} value={index + 1}>
                     {monthLabel}
@@ -475,11 +494,7 @@ function App() {
 
             <label>
               Año
-              <input
-                type="number"
-                value={data.year}
-                onChange={(event) => updateMonthYear(Number(event.target.value), data.month)}
-              />
+              <input type="number" value={FIXED_YEAR} disabled />
             </label>
           </div>
 
@@ -507,14 +522,14 @@ function App() {
               <span>dias</span>
             </div>
             <div>
-              <strong>{totalConflicts}</strong>
-              <span>alertas de cobertura</span>
+              <strong>{schedule ? totalConflicts : '--'}</strong>
+              <span>{schedule ? 'alertas de cobertura' : 'lista no generada'}</span>
             </div>
           </div>
         </article>
 
         <article className="panel">
-          <h2>Reglas activas</h2>
+          <h2>Reglas generales</h2>
           <ul className="rules-list">
             <li>A y B requieren supervisor.</li>
             <li>Cobertura base: A=3, B=3, C=2.</li>
@@ -523,6 +538,16 @@ function App() {
             <li>Jefa/jefe de dependencia no realiza turno C.</li>
             <li>Asignacion equilibrada por carga total y por tipo de turno.</li>
           </ul>
+          <h3 className="section-subtitle">Reglas del mes</h3>
+          <ul className="rules-list">
+            <li>Condicionantes cargados: {data.coverageOverrides.length + data.vacations.length + data.weekdayBlocks.length + data.dateBlocks.length + data.forcedAssignments.length}</li>
+            <li>Feriados del mes: {data.holidays.length}</li>
+            <li>Estado: {schedule ? 'lista generada' : 'pendiente de generar'}</li>
+            <li>{data.monthlyNotes.trim() ? data.monthlyNotes.trim() : 'Sin notas mensuales cargadas.'}</li>
+          </ul>
+          {hasPendingGeneration ? (
+            <p className="status-msg warn">Hay cambios nuevos. Presiona \"Generar lista del mes\" para aplicar condicionantes.</p>
+          ) : null}
           {statusMessage ? <p className="status-msg">{statusMessage}</p> : null}
         </article>
       </section>
@@ -598,7 +623,6 @@ function App() {
                     <th>Cargo</th>
                     <th>Condicionante</th>
                     <th>Pendiente</th>
-                    <th></th>
                   </tr>
                 </thead>
                 <tbody>
@@ -612,11 +636,6 @@ function App() {
                       <td>{roleLabel(controller.role)}</td>
                       <td>{controller.condition || '-'}</td>
                       <td>{controller.pending}</td>
-                      <td>
-                        <button className="button small danger" onClick={() => removeController(controller.id)}>
-                          Quitar
-                        </button>
-                      </td>
                     </tr>
                   ))}
                 </tbody>
@@ -629,9 +648,6 @@ function App() {
                   <div className="stack-head">
                     <button className="name-link" onClick={() => openEditControllerModal(controller)}>
                       {controller.name}
-                    </button>
-                    <button className="button small danger" onClick={() => removeController(controller.id)}>
-                      Quitar
                     </button>
                   </div>
                   <div className="stack-grid">
@@ -954,171 +970,193 @@ function App() {
 
             {data.monthlyNotes ? <p className="monthly-note">Notas: {data.monthlyNotes}</p> : null}
 
-            <div className="table-wrapper desktop-only">
-              <table className="schedule-table">
-                <thead>
-                  <tr>
-                    <th>Fecha</th>
-                    <th>Turno A</th>
-                    <th>Turno B</th>
-                    <th>Turno C</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {schedule.days.map((day) => (
-                    <tr key={day.date}>
-                      <td>
-                        <strong>{formatDate(day.date)}</strong>
-                        <div className="dim">{day.dayLabel}</div>
-                      </td>
+            {schedule ? (
+              <>
+                <div className="table-wrapper desktop-only">
+                  <table className="schedule-table">
+                    <thead>
+                      <tr>
+                        <th>Fecha</th>
+                        <th>Turno A</th>
+                        <th>Turno B</th>
+                        <th>Turno C</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {schedule.days.map((day) => (
+                        <tr key={day.date}>
+                          <td>
+                            <strong>{formatDate(day.date)}</strong>
+                            <div className="dim">{day.dayLabel}</div>
+                          </td>
 
+                          {SHIFT_ORDER.map((shift) => {
+                            const plan = day.shifts[shift]
+                            return (
+                              <td key={`${day.date}-${shift}`}>
+                                <div className="shift-meta">
+                                  <span>
+                                    {plan.assignedControllerIds.length}/{plan.required}
+                                  </span>
+                                  <small>
+                                    {SHIFT_CONFIG[shift].local} | {SHIFT_CONFIG[shift].utc} UTC
+                                  </small>
+                                </div>
+
+                                <ul className="assignment-list">
+                                  {plan.assignedControllerIds.map((controllerId) => (
+                                    <li key={controllerId}>{nameById(controllerById, controllerId)}</li>
+                                  ))}
+                                </ul>
+
+                                {plan.conflicts.length ? (
+                                  <ul className="conflict-list">
+                                    {plan.conflicts.map((conflict, index) => (
+                                      <li key={`${shift}-${index}`}>{conflict}</li>
+                                    ))}
+                                  </ul>
+                                ) : null}
+                              </td>
+                            )
+                          })}
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+
+                <div className="mobile-only stack-list">
+                  {schedule.days.map((day) => (
+                    <article key={`mobile-day-${day.date}`} className="stack-card">
+                      <h3>
+                        {formatDate(day.date)} <span className="dim">({day.dayLabel})</span>
+                      </h3>
                       {SHIFT_ORDER.map((shift) => {
                         const plan = day.shifts[shift]
                         return (
-                          <td key={`${day.date}-${shift}`}>
-                            <div className="shift-meta">
-                              <span>
-                                {plan.assignedControllerIds.length}/{plan.required}
-                              </span>
-                              <small>
-                                {SHIFT_CONFIG[shift].local} | {SHIFT_CONFIG[shift].utc} UTC
-                              </small>
-                            </div>
-
+                          <section key={`mobile-${day.date}-${shift}`} className="stack-shift">
+                            <p>
+                              <strong>Turno {shift}:</strong> {plan.assignedControllerIds.length}/{plan.required}
+                            </p>
+                            <p className="dim">
+                              {SHIFT_CONFIG[shift].local} local | {SHIFT_CONFIG[shift].utc} UTC
+                            </p>
                             <ul className="assignment-list">
                               {plan.assignedControllerIds.map((controllerId) => (
-                                <li key={controllerId}>{nameById(controllerById, controllerId)}</li>
+                                <li key={`${day.date}-${shift}-${controllerId}`}>
+                                  {nameById(controllerById, controllerId)}
+                                </li>
                               ))}
                             </ul>
-
                             {plan.conflicts.length ? (
                               <ul className="conflict-list">
                                 {plan.conflicts.map((conflict, index) => (
-                                  <li key={`${shift}-${index}`}>{conflict}</li>
+                                  <li key={`mobile-conf-${day.date}-${shift}-${index}`}>{conflict}</li>
                                 ))}
                               </ul>
                             ) : null}
-                          </td>
+                          </section>
                         )
                       })}
-                    </tr>
+                    </article>
                   ))}
-                </tbody>
-              </table>
-            </div>
-
-            <div className="mobile-only stack-list">
-              {schedule.days.map((day) => (
-                <article key={`mobile-day-${day.date}`} className="stack-card">
-                  <h3>
-                    {formatDate(day.date)} <span className="dim">({day.dayLabel})</span>
-                  </h3>
-                  {SHIFT_ORDER.map((shift) => {
-                    const plan = day.shifts[shift]
-                    return (
-                      <section key={`mobile-${day.date}-${shift}`} className="stack-shift">
-                        <p>
-                          <strong>Turno {shift}:</strong> {plan.assignedControllerIds.length}/{plan.required}
-                        </p>
-                        <p className="dim">
-                          {SHIFT_CONFIG[shift].local} local | {SHIFT_CONFIG[shift].utc} UTC
-                        </p>
-                        <ul className="assignment-list">
-                          {plan.assignedControllerIds.map((controllerId) => (
-                            <li key={`${day.date}-${shift}-${controllerId}`}>
-                              {nameById(controllerById, controllerId)}
-                            </li>
-                          ))}
-                        </ul>
-                        {plan.conflicts.length ? (
-                          <ul className="conflict-list">
-                            {plan.conflicts.map((conflict, index) => (
-                              <li key={`mobile-conf-${day.date}-${shift}-${index}`}>{conflict}</li>
-                            ))}
-                          </ul>
-                        ) : null}
-                      </section>
-                    )
-                  })}
-                </article>
-              ))}
-            </div>
+                </div>
+              </>
+            ) : (
+              <div className="empty-state">
+                <p>Aun no hay lista generada para este mes.</p>
+                <button className="button" onClick={generateMonthList}>
+                  Generar lista del mes
+                </button>
+              </div>
+            )}
           </article>
         </main>
       ) : null}
 
       {activeTab === 'agenda' ? (
         <main className="content-grid">
-          <article className="panel agenda-layout">
-            <div>
-              <h2>Almanaque de turnos</h2>
-              <p className="dim">Click en un dia para ver el detalle de A/B/C.</p>
-              <div className="calendar-grid">
-                {['Dom', 'Lun', 'Mar', 'Mie', 'Jue', 'Vie', 'Sab'].map((label) => (
-                  <div key={label} className="calendar-head">
-                    {label}
-                  </div>
-                ))}
-
-                {calendarCells.map((date, index) => {
-                  if (!date) {
-                    return <div key={`blank-${index}`} className="calendar-cell blank" />
-                  }
-
-                  const plan = dayPlanByDate[date]
-                  const isSelected = date === agendaDate
-                  return (
-                    <button
-                      key={date}
-                      className={isSelected ? 'calendar-cell selected' : 'calendar-cell'}
-                      onClick={() => setSelectedAgendaDate(date)}
-                    >
-                      <div className="calendar-day">{Number(date.slice(-2))}</div>
-                      <div className="calendar-mini">
-                        <span>A {plan?.shifts.A.assignedControllerIds.length ?? 0}</span>
-                        <span>B {plan?.shifts.B.assignedControllerIds.length ?? 0}</span>
-                        <span>C {plan?.shifts.C.assignedControllerIds.length ?? 0}</span>
+          <article className="panel">
+            {schedule ? (
+              <div className="agenda-layout">
+                <div>
+                  <h2>Almanaque de turnos</h2>
+                  <p className="dim">Click en un dia para ver el detalle de A/B/C.</p>
+                  <div className="calendar-grid">
+                    {['Dom', 'Lun', 'Mar', 'Mie', 'Jue', 'Vie', 'Sab'].map((label) => (
+                      <div key={label} className="calendar-head">
+                        {label}
                       </div>
-                    </button>
-                  )
-                })}
-              </div>
-            </div>
+                    ))}
 
-            <div className="agenda-detail">
-              <h3>Detalle del dia {agendaDate ? formatDate(agendaDate) : '-'}</h3>
-              {selectedAgendaPlan ? (
-                <>
-                  {SHIFT_ORDER.map((shift) => {
-                    const shiftPlan = selectedAgendaPlan.shifts[shift]
-                    return (
-                      <section key={shift} className="agenda-shift">
-                        <h4>
-                          Turno {shift} ({SHIFT_CONFIG[shift].local} local / {SHIFT_CONFIG[shift].utc} UTC)
-                        </h4>
-                        <p className="dim">
-                          Cobertura {shiftPlan.assignedControllerIds.length}/{shiftPlan.required}
-                        </p>
-                        <ul className="assignment-list">
-                          {shiftPlan.assignedControllerIds.map((controllerId) => (
-                            <li key={controllerId}>{nameById(controllerById, controllerId)}</li>
-                          ))}
-                        </ul>
-                        {shiftPlan.conflicts.length ? (
-                          <ul className="conflict-list">
-                            {shiftPlan.conflicts.map((conflict, index) => (
-                              <li key={`${shift}-agenda-${index}`}>{conflict}</li>
-                            ))}
-                          </ul>
-                        ) : null}
-                      </section>
-                    )
-                  })}
-                </>
-              ) : (
-                <p className="dim">No hay datos para el dia seleccionado.</p>
-              )}
-            </div>
+                    {calendarCells.map((date, index) => {
+                      if (!date) {
+                        return <div key={`blank-${index}`} className="calendar-cell blank" />
+                      }
+
+                      const plan = dayPlanByDate[date]
+                      const isSelected = date === agendaDate
+                      return (
+                        <button
+                          key={date}
+                          className={isSelected ? 'calendar-cell selected' : 'calendar-cell'}
+                          onClick={() => setSelectedAgendaDate(date)}
+                        >
+                          <div className="calendar-day">{Number(date.slice(-2))}</div>
+                          <div className="calendar-mini">
+                            <span>A {plan?.shifts.A.assignedControllerIds.length ?? 0}</span>
+                            <span>B {plan?.shifts.B.assignedControllerIds.length ?? 0}</span>
+                            <span>C {plan?.shifts.C.assignedControllerIds.length ?? 0}</span>
+                          </div>
+                        </button>
+                      )
+                    })}
+                  </div>
+                </div>
+
+                <div className="agenda-detail">
+                  <h3>Detalle del dia {agendaDate ? formatDate(agendaDate) : '-'}</h3>
+                  {selectedAgendaPlan ? (
+                    <>
+                      {SHIFT_ORDER.map((shift) => {
+                        const shiftPlan = selectedAgendaPlan.shifts[shift]
+                        return (
+                          <section key={shift} className="agenda-shift">
+                            <h4>
+                              Turno {shift} ({SHIFT_CONFIG[shift].local} local / {SHIFT_CONFIG[shift].utc} UTC)
+                            </h4>
+                            <p className="dim">
+                              Cobertura {shiftPlan.assignedControllerIds.length}/{shiftPlan.required}
+                            </p>
+                            <ul className="assignment-list">
+                              {shiftPlan.assignedControllerIds.map((controllerId) => (
+                                <li key={controllerId}>{nameById(controllerById, controllerId)}</li>
+                              ))}
+                            </ul>
+                            {shiftPlan.conflicts.length ? (
+                              <ul className="conflict-list">
+                                {shiftPlan.conflicts.map((conflict, index) => (
+                                  <li key={`${shift}-agenda-${index}`}>{conflict}</li>
+                                ))}
+                              </ul>
+                            ) : null}
+                          </section>
+                        )
+                      })}
+                    </>
+                  ) : (
+                    <p className="dim">No hay datos para el dia seleccionado.</p>
+                  )}
+                </div>
+              </div>
+            ) : (
+              <div className="empty-state">
+                <p>Genera la lista mensual para habilitar la agenda.</p>
+                <button className="button" onClick={generateMonthList}>
+                  Generar lista del mes
+                </button>
+              </div>
+            )}
           </article>
         </main>
       ) : null}
@@ -1127,71 +1165,82 @@ function App() {
         <main className="content-grid">
           <article className="panel">
             <h2>Estadisticas por controlador</h2>
-            <div className="table-wrapper desktop-only">
-              <table>
-                <thead>
-                  <tr>
-                    <th>Nombre</th>
-                    <th>Cargo</th>
-                    <th>A</th>
-                    <th>B</th>
-                    <th>C</th>
-                    <th>Total</th>
-                    <th>Fin de semana</th>
-                    <th>Vacaciones</th>
-                    <th>Feriados</th>
-                    <th>Pendientes</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {statsRows.map((row) => (
-                    <tr key={String(row.nombre)}>
-                      <td>{row.nombre}</td>
-                      <td>{row.cargo}</td>
-                      <td>{row.turnosA}</td>
-                      <td>{row.turnosB}</td>
-                      <td>{row.turnosC}</td>
-                      <td>{row.total}</td>
-                      <td>{row.finDeSemana}</td>
-                      <td>{row.vacaciones}</td>
-                      <td>{row.feriados}</td>
-                      <td>{row.pendientes}</td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
+            {schedule ? (
+              <>
+                <div className="table-wrapper desktop-only">
+                  <table>
+                    <thead>
+                      <tr>
+                        <th>Nombre</th>
+                        <th>Cargo</th>
+                        <th>A</th>
+                        <th>B</th>
+                        <th>C</th>
+                        <th>Total</th>
+                        <th>Fin de semana</th>
+                        <th>Vacaciones</th>
+                        <th>Feriados</th>
+                        <th>Pendientes</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {statsRows.map((row) => (
+                        <tr key={String(row.nombre)}>
+                          <td>{row.nombre}</td>
+                          <td>{row.cargo}</td>
+                          <td>{row.turnosA}</td>
+                          <td>{row.turnosB}</td>
+                          <td>{row.turnosC}</td>
+                          <td>{row.total}</td>
+                          <td>{row.finDeSemana}</td>
+                          <td>{row.vacaciones}</td>
+                          <td>{row.feriados}</td>
+                          <td>{row.pendientes}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
 
-            <div className="mobile-only stack-list">
-              {statsRows.map((row) => (
-                <article key={`mobile-stats-${String(row.nombre)}`} className="stack-card">
-                  <h3>{row.nombre}</h3>
-                  <div className="stack-grid">
-                    <p>
-                      <strong>Cargo:</strong> {row.cargo}
-                    </p>
-                    <p>
-                      <strong>Turnos:</strong> A {row.turnosA} | B {row.turnosB} | C {row.turnosC}
-                    </p>
-                    <p>
-                      <strong>Total:</strong> {row.total}
-                    </p>
-                    <p>
-                      <strong>Finde:</strong> {row.finDeSemana}
-                    </p>
-                    <p>
-                      <strong>Vacaciones:</strong> {row.vacaciones}
-                    </p>
-                    <p>
-                      <strong>Feriados:</strong> {row.feriados}
-                    </p>
-                    <p>
-                      <strong>Pendientes:</strong> {row.pendientes}
-                    </p>
-                  </div>
-                </article>
-              ))}
-            </div>
+                <div className="mobile-only stack-list">
+                  {statsRows.map((row) => (
+                    <article key={`mobile-stats-${String(row.nombre)}`} className="stack-card">
+                      <h3>{row.nombre}</h3>
+                      <div className="stack-grid">
+                        <p>
+                          <strong>Cargo:</strong> {row.cargo}
+                        </p>
+                        <p>
+                          <strong>Turnos:</strong> A {row.turnosA} | B {row.turnosB} | C {row.turnosC}
+                        </p>
+                        <p>
+                          <strong>Total:</strong> {row.total}
+                        </p>
+                        <p>
+                          <strong>Finde:</strong> {row.finDeSemana}
+                        </p>
+                        <p>
+                          <strong>Vacaciones:</strong> {row.vacaciones}
+                        </p>
+                        <p>
+                          <strong>Feriados:</strong> {row.feriados}
+                        </p>
+                        <p>
+                          <strong>Pendientes:</strong> {row.pendientes}
+                        </p>
+                      </div>
+                    </article>
+                  ))}
+                </div>
+              </>
+            ) : (
+              <div className="empty-state">
+                <p>Genera la lista mensual para calcular las estadisticas.</p>
+                <button className="button" onClick={generateMonthList}>
+                  Generar lista del mes
+                </button>
+              </div>
+            )}
           </article>
 
           <article className="panel">
@@ -1273,6 +1322,19 @@ function App() {
               </label>
             </div>
             <div className="modal-actions">
+              <button
+                className="button danger"
+                onClick={() => {
+                  if (!editingControllerId) {
+                    return
+                  }
+                  removeController(editingControllerId)
+                  closeEditControllerModal()
+                  setStatusMessage('Controlador eliminado.')
+                }}
+              >
+                Quitar controlador
+              </button>
               <button className="button" onClick={saveControllerModal}>
                 Guardar cambios
               </button>
@@ -1333,7 +1395,7 @@ function ConstraintList({
 
 function readStoredData(): TurneroData {
   const today = new Date()
-  const fallback = createSeedData(today.getFullYear(), today.getMonth() + 1)
+  const fallback = createSeedData(FIXED_YEAR, today.getMonth() + 1)
 
   try {
     const raw = localStorage.getItem(STORAGE_KEY)
@@ -1357,8 +1419,8 @@ function readStoredData(): TurneroData {
       : fallback.controllers
 
     return {
-      year: parsed.year,
-      month: parsed.month,
+      year: FIXED_YEAR,
+      month: clampMonth(parsed.month),
       controllers,
       coverageOverrides: parsed.coverageOverrides ?? [],
       vacations: parsed.vacations ?? [],
@@ -1371,6 +1433,21 @@ function readStoredData(): TurneroData {
   } catch {
     return fallback
   }
+}
+
+function clampMonth(value: unknown): number {
+  const numeric = Number(value)
+  if (!Number.isInteger(numeric)) {
+    return 1
+  }
+  return Math.max(1, Math.min(12, numeric))
+}
+
+function cloneData<T>(value: T): T {
+  if (typeof structuredClone === 'function') {
+    return structuredClone(value)
+  }
+  return JSON.parse(JSON.stringify(value)) as T
 }
 
 function createId(prefix: string): string {

@@ -99,6 +99,12 @@ h3 {
   background: var(--accent-strong);
 }
 
+.button:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+  transform: none;
+}
+
 .button.ghost {
   background: rgba(255, 255, 255, 0.12);
   border: 1px solid rgba(255, 255, 255, 0.36);
@@ -220,6 +226,17 @@ textarea {
   font-weight: 600;
 }
 
+.status-msg.warn {
+  background: #fff0d9;
+  color: #70420f;
+}
+
+.section-subtitle {
+  margin: 14px 0 8px;
+  font-size: 0.95rem;
+  color: #224458;
+}
+
 .tabs {
   display: inline-flex;
   gap: 7px;
@@ -295,6 +312,16 @@ textarea {
 
 .stack-shift p {
   margin: 0;
+}
+
+.empty-state {
+  display: grid;
+  gap: 10px;
+  justify-items: start;
+  padding: 14px;
+  border: 1px dashed #c8d6df;
+  border-radius: 12px;
+  background: #f7fbfd;
 }
 
 .table-wrapper {
