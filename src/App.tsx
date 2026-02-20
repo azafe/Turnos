@@ -17,6 +17,9 @@ import {
 
 const STORAGE_KEY = 'turnero_eana_v2'
 const FIXED_YEAR = 2026
+const CONTROLLERS_PAGE_SIZE = 8
+const SCHEDULE_PAGE_SIZE = 7
+const STATS_PAGE_SIZE = 10
 
 type TabId = 'mes' | 'agenda' | 'estadisticas'
 
@@ -41,6 +44,10 @@ function App() {
   const [hasPendingGeneration, setHasPendingGeneration] = useState(true)
   const [statusMessage, setStatusMessage] = useState('')
   const [selectedAgendaDate, setSelectedAgendaDate] = useState('')
+  const [controllerQuery, setControllerQuery] = useState('')
+  const [controllersPage, setControllersPage] = useState(1)
+  const [schedulePage, setSchedulePage] = useState(1)
+  const [statsPage, setStatsPage] = useState(1)
 
   const [controllerForm, setControllerForm] = useState<ControllerDraft>(EMPTY_CONTROLLER_DRAFT)
 
@@ -158,6 +165,41 @@ function App() {
     [data.controllers, generatedData, statsMap],
   )
 
+  const normalizedControllerQuery = controllerQuery.trim().toLowerCase()
+
+  const filteredControllers = useMemo(() => {
+    if (!normalizedControllerQuery) {
+      return data.controllers
+    }
+    return data.controllers.filter((controller) =>
+      controller.name.toLowerCase().includes(normalizedControllerQuery),
+    )
+  }, [data.controllers, normalizedControllerQuery])
+
+  const filteredStatsRows = useMemo(() => {
+    if (!normalizedControllerQuery) {
+      return statsRows
+    }
+    return statsRows.filter((row) =>
+      String(row.nombre).toLowerCase().includes(normalizedControllerQuery),
+    )
+  }, [normalizedControllerQuery, statsRows])
+
+  const controllerPagination = useMemo(
+    () => paginate(filteredControllers, controllersPage, CONTROLLERS_PAGE_SIZE),
+    [filteredControllers, controllersPage],
+  )
+
+  const schedulePagination = useMemo(
+    () => paginate(schedule?.days ?? [], schedulePage, SCHEDULE_PAGE_SIZE),
+    [schedule, schedulePage],
+  )
+
+  const statsPagination = useMemo(
+    () => paginate(filteredStatsRows, statsPage, STATS_PAGE_SIZE),
+    [filteredStatsRows, statsPage],
+  )
+
   const agendaDate = monthDates.includes(selectedAgendaDate) ? selectedAgendaDate : defaultDate
   const selectedAgendaPlan = agendaDate ? dayPlanByDate[agendaDate] : undefined
 
@@ -235,6 +277,12 @@ function App() {
   }
 
   const defaultControllerId = data.controllers[0]?.id ?? ''
+
+  const onControllerQueryChange = (value: string): void => {
+    setControllerQuery(value)
+    setControllersPage(1)
+    setStatsPage(1)
+  }
 
   const openEditControllerModal = (controller: Controller): void => {
     setEditingControllerId(controller.id)
@@ -472,6 +520,8 @@ function App() {
     }))
 
     setSelectedAgendaDate('')
+    setSchedulePage(1)
+    setStatsPage(1)
   }
 
   const resetAll = (): void => {
@@ -480,6 +530,10 @@ function App() {
     setGeneratedData(null)
     setHasPendingGeneration(true)
     setSelectedAgendaDate('')
+    setControllerQuery('')
+    setControllersPage(1)
+    setSchedulePage(1)
+    setStatsPage(1)
     setStatusMessage('Se restablecio la planificacion con la dotacion base del Excel.')
   }
 
@@ -503,6 +557,8 @@ function App() {
     setGeneratedData(nextGeneratedData)
     setHasPendingGeneration(false)
     setSelectedAgendaDate('')
+    setSchedulePage(1)
+    setStatsPage(1)
     setStatusMessage(`Lista generada para ${MONTH_LABELS[data.month - 1]} ${FIXED_YEAR}.`)
   }
 
@@ -539,6 +595,21 @@ function App() {
           </button>
         </div>
       </header>
+
+      <section className="workflow-strip">
+        <div className={monthConstraintsCount > 0 ? 'workflow-step done' : 'workflow-step'}>
+          <strong>1. Cargar condicionantes</strong>
+          <span>{monthConstraintsCount > 0 ? `${monthConstraintsCount} cargados` : 'Sin condicionantes'}</span>
+        </div>
+        <div className={schedule ? 'workflow-step done' : 'workflow-step active'}>
+          <strong>2. Generar lista mensual</strong>
+          <span>{schedule ? 'Lista generada' : 'Pendiente de generar'}</span>
+        </div>
+        <div className={schedule ? 'workflow-step active' : 'workflow-step'}>
+          <strong>3. Revisar agenda y estadisticas</strong>
+          <span>{schedule ? 'Ya puedes revisar y exportar' : 'Disponible tras generar lista'}</span>
+        </div>
+      </section>
 
       <section className="top-grid">
         <article className="panel">
@@ -632,6 +703,16 @@ function App() {
         <main className="content-grid">
           <article className="panel">
             <h2>Controladores</h2>
+            <div className="search-row">
+              <input
+                placeholder="Buscar controlador por nombre"
+                value={controllerQuery}
+                onChange={(event) => onControllerQueryChange(event.target.value)}
+              />
+              <span className="dim">
+                Mostrando {controllerPagination.startItem}-{controllerPagination.endItem} de {filteredControllers.length}
+              </span>
+            </div>
             <div className="row-inline responsive">
               <input
                 placeholder="Nombre"
@@ -690,7 +771,7 @@ function App() {
                   </tr>
                 </thead>
                 <tbody>
-                  {data.controllers.map((controller) => (
+                  {controllerPagination.items.map((controller) => (
                     <tr key={controller.id}>
                       <td>
                         <button className="name-link" onClick={() => openEditControllerModal(controller)}>
@@ -707,7 +788,7 @@ function App() {
             </div>
 
             <div className="mobile-only stack-list">
-              {data.controllers.map((controller) => (
+              {controllerPagination.items.map((controller) => (
                 <article key={`mobile-${controller.id}`} className="stack-card">
                   <div className="stack-head">
                     <button className="name-link" onClick={() => openEditControllerModal(controller)}>
@@ -728,6 +809,12 @@ function App() {
                 </article>
               ))}
             </div>
+
+            <Pagination
+              page={controllerPagination.currentPage}
+              totalPages={controllerPagination.totalPages}
+              onPageChange={setControllersPage}
+            />
           </article>
 
           <article className="panel">
@@ -1036,6 +1123,9 @@ function App() {
 
             {schedule ? (
               <>
+                <p className="dim">
+                  Mostrando dias {schedulePagination.startItem}-{schedulePagination.endItem} de {schedulePagination.totalItems}
+                </p>
                 <div className="table-wrapper desktop-only">
                   <table className="schedule-table">
                     <thead>
@@ -1047,7 +1137,7 @@ function App() {
                       </tr>
                     </thead>
                     <tbody>
-                      {schedule.days.map((day) => (
+                      {schedulePagination.items.map((day) => (
                         <tr key={day.date}>
                           <td>
                             <strong>{formatDate(day.date)}</strong>
@@ -1090,7 +1180,7 @@ function App() {
                 </div>
 
                 <div className="mobile-only stack-list">
-                  {schedule.days.map((day) => (
+                  {schedulePagination.items.map((day) => (
                     <article key={`mobile-day-${day.date}`} className="stack-card">
                       <h3>
                         {formatDate(day.date)} <span className="dim">({day.dayLabel})</span>
@@ -1125,6 +1215,12 @@ function App() {
                     </article>
                   ))}
                 </div>
+
+                <Pagination
+                  page={schedulePagination.currentPage}
+                  totalPages={schedulePagination.totalPages}
+                  onPageChange={setSchedulePage}
+                />
               </>
             ) : (
               <div className="empty-state">
@@ -1229,6 +1325,16 @@ function App() {
         <main className="content-grid">
           <article className="panel">
             <h2>Estadisticas por controlador</h2>
+            <div className="search-row">
+              <input
+                placeholder="Buscar controlador en estadisticas"
+                value={controllerQuery}
+                onChange={(event) => onControllerQueryChange(event.target.value)}
+              />
+              <span className="dim">
+                Mostrando {statsPagination.startItem}-{statsPagination.endItem} de {filteredStatsRows.length}
+              </span>
+            </div>
             {schedule ? (
               <>
                 <div className="table-wrapper desktop-only">
@@ -1248,7 +1354,7 @@ function App() {
                       </tr>
                     </thead>
                     <tbody>
-                      {statsRows.map((row) => (
+                      {statsPagination.items.map((row) => (
                         <tr key={String(row.nombre)}>
                           <td>{row.nombre}</td>
                           <td>{row.cargo}</td>
@@ -1267,7 +1373,7 @@ function App() {
                 </div>
 
                 <div className="mobile-only stack-list">
-                  {statsRows.map((row) => (
+                  {statsPagination.items.map((row) => (
                     <article key={`mobile-stats-${String(row.nombre)}`} className="stack-card">
                       <h3>{row.nombre}</h3>
                       <div className="stack-grid">
@@ -1296,6 +1402,12 @@ function App() {
                     </article>
                   ))}
                 </div>
+
+                <Pagination
+                  page={statsPagination.currentPage}
+                  totalPages={statsPagination.totalPages}
+                  onPageChange={setStatsPage}
+                />
               </>
             ) : (
               <div className="empty-state">
@@ -1457,6 +1569,42 @@ function ConstraintList({
   )
 }
 
+function Pagination({
+  page,
+  totalPages,
+  onPageChange,
+}: {
+  page: number
+  totalPages: number
+  onPageChange: (nextPage: number) => void
+}) {
+  if (totalPages <= 1) {
+    return null
+  }
+
+  return (
+    <div className="pagination">
+      <button
+        className="button ghost-dark small"
+        disabled={page <= 1}
+        onClick={() => onPageChange(Math.max(1, page - 1))}
+      >
+        Anterior
+      </button>
+      <span>
+        Pagina {page} de {totalPages}
+      </span>
+      <button
+        className="button ghost-dark small"
+        disabled={page >= totalPages}
+        onClick={() => onPageChange(Math.min(totalPages, page + 1))}
+      >
+        Siguiente
+      </button>
+    </div>
+  )
+}
+
 function readStoredData(): TurneroData {
   const today = new Date()
   const fallback = createSeedData(FIXED_YEAR, today.getMonth() + 1)
@@ -1512,6 +1660,33 @@ function cloneData<T>(value: T): T {
     return structuredClone(value)
   }
   return JSON.parse(JSON.stringify(value)) as T
+}
+
+function paginate<T>(items: T[], page: number, pageSize: number): {
+  items: T[]
+  currentPage: number
+  totalPages: number
+  totalItems: number
+  startItem: number
+  endItem: number
+} {
+  const totalItems = items.length
+  const totalPages = Math.max(1, Math.ceil(totalItems / pageSize))
+  const safePage = Math.max(1, Math.min(page, totalPages))
+  const start = (safePage - 1) * pageSize
+  const end = start + pageSize
+  const pageItems = items.slice(start, end)
+  const startItem = totalItems === 0 ? 0 : start + 1
+  const endItem = totalItems === 0 ? 0 : Math.min(end, totalItems)
+
+  return {
+    items: pageItems,
+    currentPage: safePage,
+    totalPages,
+    totalItems,
+    startItem,
+    endItem,
+  }
 }
 
 function createId(prefix: string): string {

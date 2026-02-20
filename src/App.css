@@ -79,6 +79,40 @@ h3 {
   flex-wrap: wrap;
 }
 
+.workflow-strip {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.workflow-step {
+  border: 1px solid rgba(224, 239, 247, 0.34);
+  border-radius: 14px;
+  padding: 10px 12px;
+  background: rgba(7, 38, 57, 0.5);
+  color: #cae2ec;
+  display: grid;
+  gap: 3px;
+}
+
+.workflow-step strong {
+  font-size: 0.9rem;
+}
+
+.workflow-step span {
+  font-size: 0.78rem;
+}
+
+.workflow-step.done {
+  border-color: rgba(159, 242, 228, 0.64);
+  background: rgba(7, 62, 66, 0.58);
+}
+
+.workflow-step.active {
+  border-color: rgba(255, 231, 180, 0.7);
+  background: rgba(107, 82, 30, 0.5);
+}
+
 .hidden-input {
   display: none;
 }
@@ -312,6 +346,31 @@ textarea {
 
 .stack-shift p {
   margin: 0;
+}
+
+.search-row {
+  display: flex;
+  gap: 10px;
+  align-items: center;
+  margin-bottom: 10px;
+}
+
+.search-row input {
+  max-width: 360px;
+}
+
+.pagination {
+  margin-top: 10px;
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 8px;
+}
+
+.pagination span {
+  font-size: 0.86rem;
+  color: #375365;
+  font-weight: 700;
 }
 
 .empty-state {
@@ -618,6 +677,19 @@ summary {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 
+  .workflow-strip {
+    grid-template-columns: 1fr;
+  }
+
+  .search-row {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .search-row input {
+    max-width: none;
+  }
+
   .summary-cards {
     grid-template-columns: 1fr;
   }
@@ -688,5 +760,9 @@ summary {
 
   .modal-actions .button {
     width: 100%;
+  }
+
+  .pagination {
+    justify-content: center;
   }
 }
