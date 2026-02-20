@@ -38,6 +38,8 @@ export interface WeekdayBlockConstraint {
   weekday: number
   shift: ShiftCode
   note: string
+  month?: number
+  year?: number
 }
 
 export interface DateBlockConstraint {

@@ -510,7 +510,11 @@ function canAssign({
 
   const dateDay = dayOfWeek(date)
   const hasWeekdayBlock = data.weekdayBlocks.some(
-    (item) => item.controllerId === controller.id && item.weekday === dateDay && item.shift === shift,
+    (item) =>
+      item.controllerId === controller.id &&
+      item.weekday === dateDay &&
+      item.shift === shift &&
+      matchesRuleMonth(item.month, item.year, data.month, data.year),
   )
 
   if (hasWeekdayBlock) {
@@ -652,6 +656,23 @@ function toIsoDate(date: Date): string {
 
 function isDateInRange(date: string, start: string, end: string): boolean {
   return date >= start && date <= end
+}
+
+function matchesRuleMonth(
+  ruleMonth: number | undefined,
+  ruleYear: number | undefined,
+  activeMonth: number,
+  activeYear: number,
+): boolean {
+  if (ruleMonth !== undefined && ruleMonth !== activeMonth) {
+    return false
+  }
+
+  if (ruleYear !== undefined && ruleYear !== activeYear) {
+    return false
+  }
+
+  return true
 }
 
 function fairnessScore({

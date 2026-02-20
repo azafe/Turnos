@@ -163,6 +163,61 @@ function App() {
 
   const calendarCells = useMemo(() => buildCalendarCells(data.year, data.month, monthDates), [data.year, data.month, monthDates])
 
+  const monthCoverageOverrides = useMemo(
+    () =>
+      data.coverageOverrides.filter((item) =>
+        isDateInActiveMonth(item.date, data.month, data.year),
+      ),
+    [data.coverageOverrides, data.month, data.year],
+  )
+
+  const monthVacations = useMemo(
+    () =>
+      data.vacations.filter((item) =>
+        doesRangeOverlapActiveMonth(item.startDate, item.endDate, data.month, data.year),
+      ),
+    [data.vacations, data.month, data.year],
+  )
+
+  const monthWeekdayBlocks = useMemo(
+    () =>
+      data.weekdayBlocks.filter((item) =>
+        matchesMonthRule(item.month, item.year, data.month, data.year),
+      ),
+    [data.weekdayBlocks, data.month, data.year],
+  )
+
+  const monthDateBlocks = useMemo(
+    () =>
+      data.dateBlocks.filter((item) =>
+        isDateInActiveMonth(item.date, data.month, data.year),
+      ),
+    [data.dateBlocks, data.month, data.year],
+  )
+
+  const monthForcedAssignments = useMemo(
+    () =>
+      data.forcedAssignments.filter((item) =>
+        isDateInActiveMonth(item.date, data.month, data.year),
+      ),
+    [data.forcedAssignments, data.month, data.year],
+  )
+
+  const monthHolidays = useMemo(
+    () =>
+      data.holidays.filter((item) =>
+        isDateInActiveMonth(item.date, data.month, data.year),
+      ),
+    [data.holidays, data.month, data.year],
+  )
+
+  const monthConstraintsCount =
+    monthCoverageOverrides.length +
+    monthVacations.length +
+    monthWeekdayBlocks.length +
+    monthDateBlocks.length +
+    monthForcedAssignments.length
+
   useEffect(() => {
     localStorage.setItem(STORAGE_KEY, JSON.stringify(data))
   }, [data])
@@ -324,6 +379,8 @@ function App() {
       weekday: weekdayBlockForm.weekday,
       shift: weekdayBlockForm.shift,
       note: weekdayBlockForm.note.trim(),
+      month: data.month,
+      year: FIXED_YEAR,
     }
 
     handleDataUpdate((current) => ({
@@ -435,6 +492,12 @@ function App() {
     const nextGeneratedData = cloneData({
       ...data,
       year: FIXED_YEAR,
+      coverageOverrides: monthCoverageOverrides,
+      vacations: monthVacations,
+      weekdayBlocks: monthWeekdayBlocks,
+      dateBlocks: monthDateBlocks,
+      forcedAssignments: monthForcedAssignments,
+      holidays: monthHolidays,
     })
 
     setGeneratedData(nextGeneratedData)
@@ -540,9 +603,10 @@ function App() {
           </ul>
           <h3 className="section-subtitle">Reglas del mes</h3>
           <ul className="rules-list">
-            <li>Condicionantes cargados: {data.coverageOverrides.length + data.vacations.length + data.weekdayBlocks.length + data.dateBlocks.length + data.forcedAssignments.length}</li>
-            <li>Feriados del mes: {data.holidays.length}</li>
+            <li>Condicionantes cargados: {monthConstraintsCount}</li>
+            <li>Feriados del mes: {monthHolidays.length}</li>
             <li>Estado: {schedule ? 'lista generada' : 'pendiente de generar'}</li>
+            <li>Mes activo: {MONTH_LABELS[data.month - 1]} {FIXED_YEAR}</li>
             <li>{data.monthlyNotes.trim() ? data.monthlyNotes.trim() : 'Sin notas mensuales cargadas.'}</li>
           </ul>
           {hasPendingGeneration ? (
@@ -714,7 +778,7 @@ function App() {
               </div>
 
               <ConstraintList
-                items={data.coverageOverrides.map((item) => ({
+                items={monthCoverageOverrides.map((item) => ({
                   id: item.id,
                   text: `${item.date} | ${item.shift} = ${item.required} ${item.note ? `(${item.note})` : ''}`,
                 }))}
@@ -755,7 +819,7 @@ function App() {
                 </button>
               </div>
               <ConstraintList
-                items={data.vacations.map((item) => ({
+                items={monthVacations.map((item) => ({
                   id: item.id,
                   text: `${nameById(controllerById, item.controllerId)} | ${item.startDate} a ${item.endDate}`,
                 }))}
@@ -816,7 +880,7 @@ function App() {
                 </button>
               </div>
               <ConstraintList
-                items={data.weekdayBlocks.map((item) => ({
+                items={monthWeekdayBlocks.map((item) => ({
                   id: item.id,
                   text: `${nameById(controllerById, item.controllerId)} | ${WEEKDAY_OPTIONS.find((day) => day.value === item.weekday)?.label} | ${item.shift}`,
                 }))}
@@ -867,7 +931,7 @@ function App() {
                 </button>
               </div>
               <ConstraintList
-                items={data.dateBlocks.map((item) => ({
+                items={monthDateBlocks.map((item) => ({
                   id: item.id,
                   text: `${nameById(controllerById, item.controllerId)} | ${item.date} | ${item.shift}`,
                 }))}
@@ -918,7 +982,7 @@ function App() {
                 </button>
               </div>
               <ConstraintList
-                items={data.forcedAssignments.map((item) => ({
+                items={monthForcedAssignments.map((item) => ({
                   id: item.id,
                   text: `${nameById(controllerById, item.controllerId)} | ${item.date} | ${item.shift}`,
                 }))}
@@ -949,7 +1013,7 @@ function App() {
                 </button>
               </div>
               <ConstraintList
-                items={data.holidays.map((item) => ({
+                items={monthHolidays.map((item) => ({
                   id: item.id,
                   text: `${item.date} | ${item.name}`,
                 }))}
@@ -1247,12 +1311,12 @@ function App() {
             <h2>Resumen del mes</h2>
             <ul className="rules-list">
               <li>Controladores cargados: {data.controllers.length}</li>
-              <li>Condicionantes de cobertura: {data.coverageOverrides.length}</li>
-              <li>Vacaciones/licencias: {data.vacations.length}</li>
-              <li>Bloqueos semanales: {data.weekdayBlocks.length}</li>
-              <li>Bloqueos puntuales: {data.dateBlocks.length}</li>
-              <li>Asignaciones forzadas: {data.forcedAssignments.length}</li>
-              <li>Feriados: {data.holidays.length}</li>
+              <li>Condicionantes de cobertura: {monthCoverageOverrides.length}</li>
+              <li>Vacaciones/licencias: {monthVacations.length}</li>
+              <li>Bloqueos semanales: {monthWeekdayBlocks.length}</li>
+              <li>Bloqueos puntuales: {monthDateBlocks.length}</li>
+              <li>Asignaciones forzadas: {monthForcedAssignments.length}</li>
+              <li>Feriados: {monthHolidays.length}</li>
             </ul>
           </article>
         </main>
@@ -1483,6 +1547,37 @@ function buildCalendarCells(year: number, month: number, dates: string[]): strin
   }
 
   return cells
+}
+
+function isDateInActiveMonth(isoDate: string, month: number, year: number): boolean {
+  const [y, m] = isoDate.split('-').map(Number)
+  return y === year && m === month
+}
+
+function doesRangeOverlapActiveMonth(startIso: string, endIso: string, month: number, year: number): boolean {
+  const monthStart = `${year}-${String(month).padStart(2, '0')}-01`
+  const monthEnd = `${year}-${String(month).padStart(2, '0')}-${String(
+    new Date(year, month, 0).getDate(),
+  ).padStart(2, '0')}`
+
+  return !(endIso < monthStart || startIso > monthEnd)
+}
+
+function matchesMonthRule(
+  ruleMonth: number | undefined,
+  ruleYear: number | undefined,
+  activeMonth: number,
+  activeYear: number,
+): boolean {
+  if (ruleMonth !== undefined && ruleMonth !== activeMonth) {
+    return false
+  }
+
+  if (ruleYear !== undefined && ruleYear !== activeYear) {
+    return false
+  }
+
+  return true
 }
 
 function isControllerRole(role: unknown): role is ControllerRole {
