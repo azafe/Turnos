@@ -590,7 +590,7 @@ function App() {
               </button>
             </div>
 
-            <div className="table-wrapper">
+            <div className="table-wrapper desktop-only">
               <table>
                 <thead>
                   <tr>
@@ -621,6 +621,32 @@ function App() {
                   ))}
                 </tbody>
               </table>
+            </div>
+
+            <div className="mobile-only stack-list">
+              {data.controllers.map((controller) => (
+                <article key={`mobile-${controller.id}`} className="stack-card">
+                  <div className="stack-head">
+                    <button className="name-link" onClick={() => openEditControllerModal(controller)}>
+                      {controller.name}
+                    </button>
+                    <button className="button small danger" onClick={() => removeController(controller.id)}>
+                      Quitar
+                    </button>
+                  </div>
+                  <div className="stack-grid">
+                    <p>
+                      <strong>Cargo:</strong> {roleLabel(controller.role)}
+                    </p>
+                    <p>
+                      <strong>Pendiente:</strong> {controller.pending}
+                    </p>
+                    <p>
+                      <strong>Condicionante:</strong> {controller.condition || '-'}
+                    </p>
+                  </div>
+                </article>
+              ))}
             </div>
           </article>
 
@@ -928,7 +954,7 @@ function App() {
 
             {data.monthlyNotes ? <p className="monthly-note">Notas: {data.monthlyNotes}</p> : null}
 
-            <div className="table-wrapper">
+            <div className="table-wrapper desktop-only">
               <table className="schedule-table">
                 <thead>
                   <tr>
@@ -979,6 +1005,43 @@ function App() {
                   ))}
                 </tbody>
               </table>
+            </div>
+
+            <div className="mobile-only stack-list">
+              {schedule.days.map((day) => (
+                <article key={`mobile-day-${day.date}`} className="stack-card">
+                  <h3>
+                    {formatDate(day.date)} <span className="dim">({day.dayLabel})</span>
+                  </h3>
+                  {SHIFT_ORDER.map((shift) => {
+                    const plan = day.shifts[shift]
+                    return (
+                      <section key={`mobile-${day.date}-${shift}`} className="stack-shift">
+                        <p>
+                          <strong>Turno {shift}:</strong> {plan.assignedControllerIds.length}/{plan.required}
+                        </p>
+                        <p className="dim">
+                          {SHIFT_CONFIG[shift].local} local | {SHIFT_CONFIG[shift].utc} UTC
+                        </p>
+                        <ul className="assignment-list">
+                          {plan.assignedControllerIds.map((controllerId) => (
+                            <li key={`${day.date}-${shift}-${controllerId}`}>
+                              {nameById(controllerById, controllerId)}
+                            </li>
+                          ))}
+                        </ul>
+                        {plan.conflicts.length ? (
+                          <ul className="conflict-list">
+                            {plan.conflicts.map((conflict, index) => (
+                              <li key={`mobile-conf-${day.date}-${shift}-${index}`}>{conflict}</li>
+                            ))}
+                          </ul>
+                        ) : null}
+                      </section>
+                    )
+                  })}
+                </article>
+              ))}
             </div>
           </article>
         </main>
@@ -1064,7 +1127,7 @@ function App() {
         <main className="content-grid">
           <article className="panel">
             <h2>Estadisticas por controlador</h2>
-            <div className="table-wrapper">
+            <div className="table-wrapper desktop-only">
               <table>
                 <thead>
                   <tr>
@@ -1097,6 +1160,37 @@ function App() {
                   ))}
                 </tbody>
               </table>
+            </div>
+
+            <div className="mobile-only stack-list">
+              {statsRows.map((row) => (
+                <article key={`mobile-stats-${String(row.nombre)}`} className="stack-card">
+                  <h3>{row.nombre}</h3>
+                  <div className="stack-grid">
+                    <p>
+                      <strong>Cargo:</strong> {row.cargo}
+                    </p>
+                    <p>
+                      <strong>Turnos:</strong> A {row.turnosA} | B {row.turnosB} | C {row.turnosC}
+                    </p>
+                    <p>
+                      <strong>Total:</strong> {row.total}
+                    </p>
+                    <p>
+                      <strong>Finde:</strong> {row.finDeSemana}
+                    </p>
+                    <p>
+                      <strong>Vacaciones:</strong> {row.vacaciones}
+                    </p>
+                    <p>
+                      <strong>Feriados:</strong> {row.feriados}
+                    </p>
+                    <p>
+                      <strong>Pendientes:</strong> {row.pendientes}
+                    </p>
+                  </div>
+                </article>
+              ))}
             </div>
           </article>
 

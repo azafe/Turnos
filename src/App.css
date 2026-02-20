@@ -249,6 +249,54 @@ textarea {
   gap: 18px;
 }
 
+.desktop-only {
+  display: block;
+}
+
+.mobile-only {
+  display: none;
+}
+
+.stack-list {
+  display: grid;
+  gap: 10px;
+}
+
+.stack-card {
+  border: 1px solid #d2dfe7;
+  border-radius: 14px;
+  padding: 10px;
+  background: #fbfdff;
+}
+
+.stack-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 10px;
+}
+
+.stack-grid {
+  display: grid;
+  gap: 4px;
+  margin-top: 8px;
+}
+
+.stack-grid p {
+  margin: 0;
+  font-size: 0.9rem;
+}
+
+.stack-shift {
+  margin-top: 8px;
+  padding-top: 8px;
+  border-top: 1px dashed #d3dee6;
+}
+
+.stack-shift p {
+  margin: 0;
+}
+
 .table-wrapper {
   overflow: auto;
 }
@@ -461,6 +509,8 @@ summary {
 
 .modal-card {
   width: min(620px, 100%);
+  max-height: calc(100vh - 32px);
+  overflow: auto;
   border-radius: 16px;
   border: 1px solid #c9d9e3;
   background: #f5f9fc;
@@ -523,6 +573,7 @@ summary {
 
   .tab {
     flex: 1;
+    text-align: center;
   }
 
   .row-inline {
@@ -532,6 +583,83 @@ summary {
   input,
   select,
   textarea {
+    width: 100%;
+  }
+
+  .hero-actions {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .summary-cards {
+    grid-template-columns: 1fr;
+  }
+
+  .calendar-cell {
+    min-height: 64px;
+    padding: 6px;
+  }
+
+  .calendar-mini {
+    font-size: 0.68rem;
+  }
+}
+
+@media (max-width: 760px) {
+  .desktop-only {
+    display: none;
+  }
+
+  .mobile-only {
+    display: grid;
+  }
+
+  .app-shell {
+    padding: 10px;
+    gap: 12px;
+  }
+
+  .panel {
+    padding: 12px;
+  }
+
+  .hero {
+    padding: 12px;
+  }
+
+  .subtitle {
+    font-size: 0.82rem;
+  }
+
+  .tab {
+    padding: 7px 10px;
+    font-size: 0.88rem;
+  }
+
+  .agenda-detail h3 {
+    font-size: 0.95rem;
+  }
+
+  .calendar-head {
+    font-size: 0.72rem;
+    padding: 6px;
+  }
+
+  .calendar-day {
+    font-size: 0.9rem;
+  }
+
+  .modal-card {
+    border-radius: 12px;
+    padding: 12px;
+  }
+
+  .modal-actions {
+    flex-direction: column-reverse;
+    align-items: stretch;
+  }
+
+  .modal-actions .button {
     width: 100%;
   }
 }
