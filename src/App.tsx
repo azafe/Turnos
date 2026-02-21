@@ -1,8 +1,8 @@
 import { useEffect, useMemo, useState } from 'react'
 import './App.css'
-import { MONTH_LABELS, ROLE_OPTIONS, createSeedData } from './defaults'
+import { ROLE_OPTIONS, createSeedData } from './defaults'
 import { exportToPdf } from './pdf'
-import { SHIFT_ORDER, buildMonthDates, computeStats, generateMonthlySchedule } from './scheduler'
+import { buildMonthDates, computeStats, generateMonthlySchedule } from './scheduler'
 import type {
   Controller,
   ControllerRole,
@@ -14,56 +14,35 @@ import type {
   VacationConstraint,
   WeekdayBlockConstraint,
 } from './types'
-import HeaderOps from './components/HeaderOps'
-import WorkflowStepper from './components/WorkflowStepper'
-import MesTab from './components/tabs/MesTab'
+import HeaderOps, { type Page } from './components/HeaderOps'
+import SetupHome from './components/pages/SetupHome'
+import ControllersPage from './components/pages/ControllersPage'
 import AgendaTab from './components/tabs/AgendaTab'
 import StatsTab from './components/tabs/StatsTab'
 
 const STORAGE_KEY = 'turnero_eana_v2'
 const FIXED_YEAR = 2026
 const CONTROLLERS_PAGE_SIZE = 8
-const SCHEDULE_PAGE_SIZE = 7
 const STATS_PAGE_SIZE = 10
-const MIN_RECOMMENDED_CONTROLLERS = 8
-
-type TabId = 'mes' | 'agenda' | 'estadisticas'
-type DirtySection = 'controllers' | 'constraints' | 'rules'
-
-interface DirtyFlags {
-  controllers: boolean
-  constraints: boolean
-  rules: boolean
-}
 
 interface PersistedState {
   data: TurneroData
   lastGeneratedAt: number | null
 }
 
-const EMPTY_DIRTY_FLAGS: DirtyFlags = {
-  controllers: false,
-  constraints: false,
-  rules: false,
-}
-
 function App() {
   const [storedState] = useState<PersistedState>(() => readStoredState())
-  const [activeTab, setActiveTab] = useState<TabId>('mes')
+  const [activePage, setActivePage] = useState<Page>('inicio')
   const [data, setData] = useState<TurneroData>(storedState.data)
   const [lastGeneratedAt, setLastGeneratedAt] = useState<number | null>(storedState.lastGeneratedAt)
   const [generatedData, setGeneratedData] = useState<TurneroData | null>(null)
   const [hasPendingGeneration, setHasPendingGeneration] = useState(true)
   const [isGenerating, setIsGenerating] = useState(false)
-  const [dirtySections, setDirtySections] = useState<DirtyFlags>(EMPTY_DIRTY_FLAGS)
-  const [isHeaderCompact, setIsHeaderCompact] = useState(false)
   const [statusMessage, setStatusMessage] = useState('')
   const [selectedAgendaDate, setSelectedAgendaDate] = useState('')
   const [controllerQuery, setControllerQuery] = useState('')
   const [controllersPage, setControllersPage] = useState(1)
-  const [schedulePage, setSchedulePage] = useState(1)
   const [statsPage, setStatsPage] = useState(1)
-  const [onlyProblemDays, setOnlyProblemDays] = useState(false)
 
   const monthDates = useMemo(() => buildMonthDates(data.year, data.month), [data.year, data.month])
   const defaultDate = monthDates[0] ?? ''
@@ -97,16 +76,6 @@ function App() {
       acc[day.date] = day
       return acc
     }, {})
-  }, [schedule])
-
-  const totalConflicts = useMemo(() => {
-    if (!schedule) {
-      return 0
-    }
-    return schedule.days.reduce(
-      (acc, day) => acc + SHIFT_ORDER.reduce((sum, shift) => sum + day.shifts[shift].conflicts.length, 0),
-      0,
-    )
   }, [schedule])
 
   const statsRows = useMemo(() => {
@@ -146,24 +115,9 @@ function App() {
     return statsRows.filter((row) => String(row.nombre).toLowerCase().includes(normalizedControllerQuery))
   }, [normalizedControllerQuery, statsRows])
 
-  const filteredScheduleDays = useMemo(() => {
-    if (!schedule) {
-      return []
-    }
-    if (!onlyProblemDays) {
-      return schedule.days
-    }
-    return schedule.days.filter((day) => SHIFT_ORDER.some((shift) => day.shifts[shift].conflicts.length > 0))
-  }, [onlyProblemDays, schedule])
-
   const controllerPagination = useMemo(
     () => paginate(filteredControllers, controllersPage, CONTROLLERS_PAGE_SIZE),
     [filteredControllers, controllersPage],
-  )
-
-  const schedulePagination = useMemo(
-    () => paginate(filteredScheduleDays, schedulePage, SCHEDULE_PAGE_SIZE),
-    [filteredScheduleDays, schedulePage],
   )
 
   const statsPagination = useMemo(
@@ -172,7 +126,7 @@ function App() {
   )
 
   const agendaDate = monthDates.includes(selectedAgendaDate) ? selectedAgendaDate : defaultDate
-  const selectedAgendaPlan = agendaDate ? dayPlanByDate[agendaDate] : undefined
+  const selectedAgendaPlan = schedule && agendaDate ? dayPlanByDate[agendaDate] ?? schedule.days[0] : undefined
 
   const calendarCells = useMemo(() => buildCalendarCells(data.year, data.month, monthDates), [data.year, data.month, monthDates])
 
@@ -220,60 +174,6 @@ function App() {
     monthForcedAssignments.length +
     monthHolidays.length
 
-  const pendingSections = useMemo(() => {
-    const labels: string[] = []
-    if (dirtySections.controllers) {
-      labels.push('Controladores')
-    }
-    if (dirtySections.constraints) {
-      labels.push('Condicionantes')
-    }
-    if (dirtySections.rules) {
-      labels.push('Reglas')
-    }
-
-    if (!labels.length && hasPendingGeneration && !lastGeneratedAt) {
-      labels.push('Configuracion inicial')
-    }
-
-    return labels
-  }, [dirtySections, hasPendingGeneration, lastGeneratedAt])
-
-  const coverageWarning =
-    data.controllers.length < MIN_RECOMMENDED_CONTROLLERS
-      ? `Dotacion baja: ${data.controllers.length} controladores para una cobertura base de ${MIN_RECOMMENDED_CONTROLLERS} por dia.`
-      : ''
-
-  useEffect(() => {
-    const mediaQuery = window.matchMedia('(max-width: 760px)')
-
-    const syncCompactState = (): void => {
-      if (!mediaQuery.matches) {
-        setIsHeaderCompact(false)
-        return
-      }
-      setIsHeaderCompact(window.scrollY > 24)
-    }
-
-    syncCompactState()
-    window.addEventListener('scroll', syncCompactState, { passive: true })
-
-    if (typeof mediaQuery.addEventListener === 'function') {
-      mediaQuery.addEventListener('change', syncCompactState)
-    } else {
-      mediaQuery.addListener(syncCompactState)
-    }
-
-    return () => {
-      window.removeEventListener('scroll', syncCompactState)
-      if (typeof mediaQuery.removeEventListener === 'function') {
-        mediaQuery.removeEventListener('change', syncCompactState)
-      } else {
-        mediaQuery.removeListener(syncCompactState)
-      }
-    }
-  }, [])
-
   useEffect(() => {
     localStorage.setItem(
       STORAGE_KEY,
@@ -284,17 +184,7 @@ function App() {
     )
   }, [data, lastGeneratedAt])
 
-  const markDirty = (section: DirtySection): void => {
-    setDirtySections((current) => ({
-      ...current,
-      [section]: true,
-    }))
-  }
-
-  const handleDataUpdate = (
-    updater: (current: TurneroData) => TurneroData,
-    section: DirtySection,
-  ): void => {
+  const handleDataUpdate = (updater: (current: TurneroData) => TurneroData): void => {
     setData((current) => {
       const updated = updater(current)
       return {
@@ -304,7 +194,6 @@ function App() {
     })
     setGeneratedData(null)
     setHasPendingGeneration(true)
-    markDirty(section)
   }
 
   const defaultControllerId = data.controllers[0]?.id ?? ''
@@ -335,13 +224,10 @@ function App() {
       pending: Math.max(0, Number(draft.pending) || 0),
     }
 
-    handleDataUpdate(
-      (current) => ({
-        ...current,
-        controllers: [...current.controllers, nextController],
-      }),
-      'controllers',
-    )
+    handleDataUpdate((current) => ({
+      ...current,
+      controllers: [...current.controllers, nextController],
+    }))
 
     setStatusMessage('Controlador agregado.')
   }
@@ -361,39 +247,34 @@ function App() {
       return
     }
 
-    handleDataUpdate(
-      (current) => ({
-        ...current,
-        controllers: current.controllers.map((controller) =>
-          controller.id === controllerId
-            ? {
-                ...controller,
-                name,
-                role: draft.role,
-                condition: draft.condition.trim(),
-                pending: Math.max(0, Number(draft.pending) || 0),
-              }
-            : controller,
-        ),
-      }),
-      'controllers',
-    )
+    handleDataUpdate((current) => ({
+      ...current,
+      controllers: current.controllers.map((controller) =>
+        controller.id === controllerId
+          ? {
+              ...controller,
+              name,
+              role: draft.role,
+              condition: draft.condition.trim(),
+              pending: Math.max(0, Number(draft.pending) || 0),
+            }
+          : controller,
+      ),
+    }))
 
     setStatusMessage('Controlador actualizado.')
   }
 
   const removeController = (controllerId: string): void => {
-    handleDataUpdate(
-      (current) => ({
-        ...current,
-        controllers: current.controllers.filter((controller) => controller.id !== controllerId),
-        vacations: current.vacations.filter((item) => item.controllerId !== controllerId),
-        weekdayBlocks: current.weekdayBlocks.filter((item) => item.controllerId !== controllerId),
-        dateBlocks: current.dateBlocks.filter((item) => item.controllerId !== controllerId),
-        forcedAssignments: current.forcedAssignments.filter((item) => item.controllerId !== controllerId),
-      }),
-      'controllers',
-    )
+    handleDataUpdate((current) => ({
+      ...current,
+      controllers: current.controllers.filter((controller) => controller.id !== controllerId),
+      vacations: current.vacations.filter((item) => item.controllerId !== controllerId),
+      weekdayBlocks: current.weekdayBlocks.filter((item) => item.controllerId !== controllerId),
+      dateBlocks: current.dateBlocks.filter((item) => item.controllerId !== controllerId),
+      forcedAssignments: current.forcedAssignments.filter((item) => item.controllerId !== controllerId),
+    }))
+
     setStatusMessage('Controlador eliminado.')
   }
 
@@ -409,22 +290,19 @@ function App() {
       return
     }
 
-    handleDataUpdate(
-      (current) => ({
-        ...current,
-        coverageOverrides: [
-          ...current.coverageOverrides,
-          {
-            id: createId('coverage'),
-            date,
-            shift: payload.shift,
-            required: Math.max(1, Number(payload.required) || 1),
-            note: payload.note.trim(),
-          },
-        ],
-      }),
-      'constraints',
-    )
+    handleDataUpdate((current) => ({
+      ...current,
+      coverageOverrides: [
+        ...current.coverageOverrides,
+        {
+          id: createId('coverage'),
+          date,
+          shift: payload.shift,
+          required: Math.max(1, Number(payload.required) || 1),
+          note: payload.note.trim(),
+        },
+      ],
+    }))
   }
 
   const addVacation = (payload: {
@@ -450,13 +328,10 @@ function App() {
       note: payload.note.trim(),
     }
 
-    handleDataUpdate(
-      (current) => ({
-        ...current,
-        vacations: [...current.vacations, nextVacation],
-      }),
-      'constraints',
-    )
+    handleDataUpdate((current) => ({
+      ...current,
+      vacations: [...current.vacations, nextVacation],
+    }))
   }
 
   const addWeekdayBlock = (payload: {
@@ -481,13 +356,10 @@ function App() {
       year: FIXED_YEAR,
     }
 
-    handleDataUpdate(
-      (current) => ({
-        ...current,
-        weekdayBlocks: [...current.weekdayBlocks, nextBlock],
-      }),
-      'constraints',
-    )
+    handleDataUpdate((current) => ({
+      ...current,
+      weekdayBlocks: [...current.weekdayBlocks, nextBlock],
+    }))
   }
 
   const addDateBlock = (payload: {
@@ -512,13 +384,10 @@ function App() {
       note: payload.note.trim(),
     }
 
-    handleDataUpdate(
-      (current) => ({
-        ...current,
-        dateBlocks: [...current.dateBlocks, nextBlock],
-      }),
-      'constraints',
-    )
+    handleDataUpdate((current) => ({
+      ...current,
+      dateBlocks: [...current.dateBlocks, nextBlock],
+    }))
   }
 
   const addForcedAssignment = (payload: {
@@ -543,13 +412,10 @@ function App() {
       note: payload.note.trim(),
     }
 
-    handleDataUpdate(
-      (current) => ({
-        ...current,
-        forcedAssignments: [...current.forcedAssignments, nextAssignment],
-      }),
-      'constraints',
-    )
+    handleDataUpdate((current) => ({
+      ...current,
+      forcedAssignments: [...current.forcedAssignments, nextAssignment],
+    }))
   }
 
   const addHoliday = (payload: { date: string; name: string }): void => {
@@ -565,91 +431,65 @@ function App() {
       name: payload.name.trim() || 'Feriado',
     }
 
-    handleDataUpdate(
-      (current) => ({
-        ...current,
-        holidays: [...current.holidays, nextHoliday],
-      }),
-      'constraints',
-    )
+    handleDataUpdate((current) => ({
+      ...current,
+      holidays: [...current.holidays, nextHoliday],
+    }))
   }
 
   const deleteCoverageOverride = (id: string): void => {
-    handleDataUpdate(
-      (current) => ({
-        ...current,
-        coverageOverrides: current.coverageOverrides.filter((entry) => entry.id !== id),
-      }),
-      'constraints',
-    )
+    handleDataUpdate((current) => ({
+      ...current,
+      coverageOverrides: current.coverageOverrides.filter((entry) => entry.id !== id),
+    }))
   }
 
   const deleteVacation = (id: string): void => {
-    handleDataUpdate(
-      (current) => ({
-        ...current,
-        vacations: current.vacations.filter((item) => item.id !== id),
-      }),
-      'constraints',
-    )
+    handleDataUpdate((current) => ({
+      ...current,
+      vacations: current.vacations.filter((item) => item.id !== id),
+    }))
   }
 
   const deleteWeekdayBlock = (id: string): void => {
-    handleDataUpdate(
-      (current) => ({
-        ...current,
-        weekdayBlocks: current.weekdayBlocks.filter((item) => item.id !== id),
-      }),
-      'constraints',
-    )
+    handleDataUpdate((current) => ({
+      ...current,
+      weekdayBlocks: current.weekdayBlocks.filter((item) => item.id !== id),
+    }))
   }
 
   const deleteDateBlock = (id: string): void => {
-    handleDataUpdate(
-      (current) => ({
-        ...current,
-        dateBlocks: current.dateBlocks.filter((item) => item.id !== id),
-      }),
-      'constraints',
-    )
+    handleDataUpdate((current) => ({
+      ...current,
+      dateBlocks: current.dateBlocks.filter((item) => item.id !== id),
+    }))
   }
 
   const deleteForcedAssignment = (id: string): void => {
-    handleDataUpdate(
-      (current) => ({
-        ...current,
-        forcedAssignments: current.forcedAssignments.filter((item) => item.id !== id),
-      }),
-      'constraints',
-    )
+    handleDataUpdate((current) => ({
+      ...current,
+      forcedAssignments: current.forcedAssignments.filter((item) => item.id !== id),
+    }))
   }
 
   const deleteHoliday = (id: string): void => {
-    handleDataUpdate(
-      (current) => ({
-        ...current,
-        holidays: current.holidays.filter((item) => item.id !== id),
-      }),
-      'constraints',
-    )
+    handleDataUpdate((current) => ({
+      ...current,
+      holidays: current.holidays.filter((item) => item.id !== id),
+    }))
   }
 
   const updateMonth = (month: number): void => {
     const safeMonth = Math.max(1, Math.min(12, month))
 
-    handleDataUpdate(
-      (current) => ({
-        ...current,
-        year: FIXED_YEAR,
-        month: safeMonth,
-      }),
-      'rules',
-    )
+    handleDataUpdate((current) => ({
+      ...current,
+      year: FIXED_YEAR,
+      month: safeMonth,
+    }))
 
     setSelectedAgendaDate('')
-    setSchedulePage(1)
     setStatsPage(1)
-    setOnlyProblemDays(false)
   }
 
   const resetAll = (): void => {
@@ -657,14 +497,11 @@ function App() {
     setData(createSeedData(FIXED_YEAR, today.getMonth() + 1))
     setGeneratedData(null)
     setHasPendingGeneration(true)
-    setDirtySections(EMPTY_DIRTY_FLAGS)
     setLastGeneratedAt(null)
     setSelectedAgendaDate('')
     setControllerQuery('')
     setControllersPage(1)
-    setSchedulePage(1)
     setStatsPage(1)
-    setOnlyProblemDays(false)
     setStatusMessage('Se restablecio la planificacion con la dotacion base del Excel.')
   }
 
@@ -698,12 +535,10 @@ function App() {
 
       setGeneratedData(nextGeneratedData)
       setHasPendingGeneration(false)
-      setDirtySections(EMPTY_DIRTY_FLAGS)
       setSelectedAgendaDate('')
-      setSchedulePage(1)
       setStatsPage(1)
       setLastGeneratedAt(Date.now())
-      setStatusMessage(`Lista generada para ${MONTH_LABELS[data.month - 1]} ${FIXED_YEAR}.`)
+      setStatusMessage(`Lista generada para ${monthLabel(data.month)} ${FIXED_YEAR}.`)
     } catch {
       setStatusMessage('No se pudo generar la lista.')
     } finally {
@@ -721,191 +556,48 @@ function App() {
     setStatusMessage('Archivo PDF exportado.')
   }
 
-  const scrollToSection = (sectionId: string, targetTab?: TabId): void => {
-    const executeScroll = (): void => {
-      const node = document.getElementById(sectionId)
-      if (!node) {
-        return
-      }
-      node.scrollIntoView({ behavior: 'smooth', block: 'start' })
-    }
-
-    if (targetTab && targetTab !== activeTab) {
-      setActiveTab(targetTab)
-      window.requestAnimationFrame(() => {
-        window.requestAnimationFrame(executeScroll)
-      })
-      return
-    }
-
-    executeScroll()
-  }
-
   return (
     <div className="app-shell">
       <HeaderOps
-        month={data.month}
-        year={FIXED_YEAR}
+        activePage={activePage}
         hasPendingGeneration={hasPendingGeneration}
         hasSchedule={Boolean(schedule)}
-        hasPreviousGeneration={Boolean(lastGeneratedAt)}
-        lastGeneratedAt={lastGeneratedAt}
-        isCompact={isHeaderCompact}
-        isGenerating={isGenerating}
-        pendingSections={pendingSections}
-        coverageWarning={coverageWarning}
-        onGenerate={() => {
-          void generateMonthList()
-        }}
-        onExportPdf={onExportPdf}
-        onReset={resetAll}
-        onViewChanges={() => scrollToSection('section-constraints', 'mes')}
+        onNavigate={setActivePage}
       />
 
-      <WorkflowStepper
-        monthConstraintsCount={monthConstraintsCount}
-        hasSchedule={Boolean(schedule)}
-        onStep1={() => scrollToSection('section-constraints', 'mes')}
-        onStep2={() => scrollToSection('section-month-grid', 'mes')}
-        onStep3={() => scrollToSection('section-agenda', 'agenda')}
-      />
-
-      <section className="top-grid">
-        <article className="panel">
-          <h2>Mes operativo</h2>
-          <div className="row-inline">
-            <label>
-              Mes
-              <select value={data.month} onChange={(event) => updateMonth(Number(event.target.value))}>
-                {MONTH_LABELS.map((monthLabel, index) => (
-                  <option key={monthLabel} value={index + 1}>
-                    {monthLabel}
-                  </option>
-                ))}
-              </select>
-            </label>
-
-            <label>
-              Año
-              <input type="number" value={FIXED_YEAR} disabled />
-            </label>
-          </div>
-
-          <label>
-            Condicionantes generales del mes
-            <textarea
-              rows={3}
-              value={data.monthlyNotes}
-              onChange={(event) =>
-                handleDataUpdate(
-                  (current) => ({
-                    ...current,
-                    monthlyNotes: event.target.value,
-                  }),
-                  'rules',
-                )
-              }
-            />
-          </label>
-
-          <div className="summary-cards">
-            <div>
-              <strong>{data.controllers.length}</strong>
-              <span>controladores</span>
-            </div>
-            <div>
-              <strong>{monthDates.length}</strong>
-              <span>dias</span>
-            </div>
-            <div>
-              <strong>{schedule ? totalConflicts : '--'}</strong>
-              <span>{schedule ? 'alertas de cobertura' : 'lista no generada'}</span>
-            </div>
-          </div>
-        </article>
-
-        <article className="panel">
-          <h2>Reglas generales</h2>
-          <ul className="rules-list">
-            <li>A y B requieren supervisor.</li>
-            <li>Cobertura base: A=3, B=3, C=2.</li>
-            <li>Si hay practicante en turno, debe haber instructor.</li>
-            <li>Quien hace C no toma A al dia siguiente.</li>
-            <li>Jefa/jefe de dependencia no realiza turno C.</li>
-            <li>Asignacion equilibrada por carga total y por tipo de turno.</li>
-          </ul>
-          <h3 className="section-subtitle">Reglas del mes</h3>
-          <ul className="rules-list">
-            <li>Condicionantes cargados: {monthConstraintsCount}</li>
-            <li>Feriados del mes: {monthHolidays.length}</li>
-            <li>Estado: {schedule ? 'lista generada' : 'pendiente de generar'}</li>
-            <li>Mes activo: {MONTH_LABELS[data.month - 1]} {FIXED_YEAR}</li>
-            <li>{data.monthlyNotes.trim() ? data.monthlyNotes.trim() : 'Sin notas mensuales cargadas.'}</li>
-          </ul>
-          {statusMessage ? <p className="status-msg">{statusMessage}</p> : null}
-        </article>
-      </section>
-
-      <nav className="tabs" aria-label="Secciones principales">
-        <button
-          className={activeTab === 'mes' ? 'tab active' : 'tab'}
-          onClick={() => setActiveTab('mes')}
-          aria-selected={activeTab === 'mes'}
-          aria-label="Abrir pestaña Mes"
-        >
-          Mes
-        </button>
-        <button
-          className={activeTab === 'agenda' ? 'tab active' : 'tab'}
-          onClick={() => setActiveTab('agenda')}
-          aria-selected={activeTab === 'agenda'}
-          aria-label="Abrir pestaña Agenda"
-        >
-          Agenda
-        </button>
-        <button
-          className={activeTab === 'estadisticas' ? 'tab active' : 'tab'}
-          onClick={() => setActiveTab('estadisticas')}
-          aria-selected={activeTab === 'estadisticas'}
-          aria-label="Abrir pestaña Estadisticas"
-        >
-          Estadisticas
-        </button>
-      </nav>
-
-      {activeTab === 'mes' ? (
-        <MesTab
+      {activePage === 'inicio' ? (
+        <SetupHome
           data={data}
           fixedYear={FIXED_YEAR}
-          controllerById={controllerById}
-          controllerQuery={controllerQuery}
-          onControllerQueryChange={onControllerQueryChange}
-          controllerPagination={controllerPagination}
-          onControllerPageChange={setControllersPage}
-          schedule={schedule}
-          schedulePagination={schedulePagination}
-          scheduleTotalDays={schedule?.days.length ?? 0}
-          onSchedulePageChange={setSchedulePage}
           defaultDate={defaultDate}
           defaultControllerId={defaultControllerId}
+          controllerById={controllerById}
           monthCoverageOverrides={monthCoverageOverrides}
           monthVacations={monthVacations}
           monthWeekdayBlocks={monthWeekdayBlocks}
           monthDateBlocks={monthDateBlocks}
           monthForcedAssignments={monthForcedAssignments}
           monthHolidays={monthHolidays}
-          onlyProblemDays={onlyProblemDays}
-          onToggleOnlyProblemDays={(nextValue) => {
-            setOnlyProblemDays(nextValue)
-            setSchedulePage(1)
-          }}
-          onGenerateMonthList={() => {
+          monthConstraintsCount={monthConstraintsCount}
+          hasPendingGeneration={hasPendingGeneration}
+          hasSchedule={Boolean(schedule)}
+          lastGeneratedAt={lastGeneratedAt}
+          statusMessage={statusMessage}
+          isGenerating={isGenerating}
+          onUpdateMonth={updateMonth}
+          onUpdateMonthlyNotes={(notes) =>
+            handleDataUpdate((current) => ({
+              ...current,
+              monthlyNotes: notes,
+            }))
+          }
+          onGenerate={() => {
             void generateMonthList()
           }}
-          isGenerating={isGenerating}
-          onAddController={addController}
-          onUpdateController={updateController}
-          onRemoveController={removeController}
+          onGoAgenda={() => setActivePage('agenda')}
+          onGoStats={() => setActivePage('stats')}
+          onExportPdf={onExportPdf}
+          onReset={resetAll}
           onAddCoverageOverride={addCoverageOverride}
           onDeleteCoverageOverride={deleteCoverageOverride}
           onAddVacation={addVacation}
@@ -921,44 +613,54 @@ function App() {
         />
       ) : null}
 
-      {activeTab === 'agenda' ? (
-        <AgendaTab
-          schedule={schedule}
-          agendaDate={agendaDate}
-          selectedAgendaPlan={selectedAgendaPlan}
-          calendarCells={calendarCells}
-          dayPlanByDate={dayPlanByDate}
-          controllerById={controllerById}
-          onSelectAgendaDate={setSelectedAgendaDate}
-          onGenerateMonthList={() => {
-            void generateMonthList()
-          }}
-          isGenerating={isGenerating}
+      {activePage === 'controladores' ? (
+        <ControllersPage
+          controllerQuery={controllerQuery}
+          onControllerQueryChange={onControllerQueryChange}
+          controllerPagination={controllerPagination}
+          onControllerPageChange={setControllersPage}
+          onAddController={addController}
+          onUpdateController={updateController}
+          onRemoveController={removeController}
         />
       ) : null}
 
-      {activeTab === 'estadisticas' ? (
-        <StatsTab
-          schedule={schedule}
-          controllerQuery={controllerQuery}
-          onControllerQueryChange={onControllerQueryChange}
-          statsPagination={statsPagination}
-          filteredStatsCount={filteredStatsRows.length}
-          onStatsPageChange={setStatsPage}
-          onGenerateMonthList={() => {
-            void generateMonthList()
-          }}
-          isGenerating={isGenerating}
-          summary={{
-            controllers: data.controllers.length,
-            coverageOverrides: monthCoverageOverrides.length,
-            vacations: monthVacations.length,
-            weekdayBlocks: monthWeekdayBlocks.length,
-            dateBlocks: monthDateBlocks.length,
-            forcedAssignments: monthForcedAssignments.length,
-            holidays: monthHolidays.length,
-          }}
-        />
+      {activePage === 'agenda' ? (
+        schedule && selectedAgendaPlan ? (
+          <AgendaTab
+            agendaDate={agendaDate}
+            selectedAgendaPlan={selectedAgendaPlan}
+            calendarCells={calendarCells}
+            dayPlanByDate={dayPlanByDate}
+            controllerById={controllerById}
+            onSelectAgendaDate={setSelectedAgendaDate}
+          />
+        ) : (
+          <BlockedPage onGoHome={() => setActivePage('inicio')} />
+        )
+      ) : null}
+
+      {activePage === 'stats' ? (
+        schedule ? (
+          <StatsTab
+            controllerQuery={controllerQuery}
+            onControllerQueryChange={onControllerQueryChange}
+            statsPagination={statsPagination}
+            filteredStatsCount={filteredStatsRows.length}
+            onStatsPageChange={setStatsPage}
+            summary={{
+              controllers: data.controllers.length,
+              coverageOverrides: monthCoverageOverrides.length,
+              vacations: monthVacations.length,
+              weekdayBlocks: monthWeekdayBlocks.length,
+              dateBlocks: monthDateBlocks.length,
+              forcedAssignments: monthForcedAssignments.length,
+              holidays: monthHolidays.length,
+            }}
+          />
+        ) : (
+          <BlockedPage onGoHome={() => setActivePage('inicio')} />
+        )
       ) : null}
     </div>
   )
@@ -1088,6 +790,10 @@ function roleLabel(role: ControllerRole): string {
   return ROLE_OPTIONS.find((item) => item.value === role)?.label ?? role
 }
 
+function monthLabel(month: number): string {
+  return new Date(2000, month - 1, 1).toLocaleString('es-AR', { month: 'long' })
+}
+
 function buildCalendarCells(year: number, month: number, dates: string[]): string[] {
   const firstWeekday = new Date(year, month - 1, 1).getDay()
   const cells = Array.from({ length: firstWeekday }, () => '')
@@ -1133,6 +839,17 @@ function matchesMonthRule(
 
 function isControllerRole(role: unknown): role is ControllerRole {
   return role === 'JEFE_DEPENDENCIA' || role === 'SUPERVISOR' || role === 'INSTRUCTOR' || role === 'OPERADOR' || role === 'PRACTICANTE' || role === 'ADSCRIPTO'
+}
+
+function BlockedPage({ onGoHome }: { onGoHome: () => void }) {
+  return (
+    <main className="page">
+      <section className="section-card empty-state">
+        <p>Primero generá la lista desde Inicio.</p>
+        <button className="button" onClick={onGoHome}>Ir a Inicio</button>
+      </section>
+    </main>
+  )
 }
 
 export default App

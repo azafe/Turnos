@@ -1,4 +1,3 @@
-import type { MonthlySchedule } from '../../types'
 import Pagination from '../Pagination'
 
 interface StatsRow {
@@ -24,14 +23,11 @@ interface PaginationResult<T> {
 }
 
 interface StatsTabProps {
-  schedule: MonthlySchedule | null
   controllerQuery: string
   onControllerQueryChange: (value: string) => void
   statsPagination: PaginationResult<StatsRow>
   filteredStatsCount: number
   onStatsPageChange: (nextPage: number) => void
-  onGenerateMonthList: () => void
-  isGenerating: boolean
   summary: {
     controllers: number
     coverageOverrides: number
@@ -44,14 +40,11 @@ interface StatsTabProps {
 }
 
 export default function StatsTab({
-  schedule,
   controllerQuery,
   onControllerQueryChange,
   statsPagination,
   filteredStatsCount,
   onStatsPageChange,
-  onGenerateMonthList,
-  isGenerating,
   summary,
 }: StatsTabProps) {
   return (
@@ -69,88 +62,77 @@ export default function StatsTab({
             Mostrando {statsPagination.startItem}-{statsPagination.endItem} de {filteredStatsCount}
           </span>
         </div>
-        {schedule ? (
-          <>
-            <div className="table-wrapper desktop-only">
-              <table>
-                <thead>
-                  <tr>
-                    <th>Nombre</th>
-                    <th>Cargo</th>
-                    <th>A</th>
-                    <th>B</th>
-                    <th>C</th>
-                    <th>Total</th>
-                    <th>Fin de semana</th>
-                    <th>Vacaciones</th>
-                    <th>Feriados</th>
-                    <th>Pendientes</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {statsPagination.items.map((row) => (
-                    <tr key={String(row.nombre)}>
-                      <td>{row.nombre}</td>
-                      <td>{row.cargo}</td>
-                      <td>{row.turnosA}</td>
-                      <td>{row.turnosB}</td>
-                      <td>{row.turnosC}</td>
-                      <td>{row.total}</td>
-                      <td>{row.finDeSemana}</td>
-                      <td>{row.vacaciones}</td>
-                      <td>{row.feriados}</td>
-                      <td>{row.pendientes}</td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-
-            <div className="mobile-only stack-list">
+        <div className="table-wrapper desktop-only">
+          <table>
+            <thead>
+              <tr>
+                <th>Nombre</th>
+                <th>Cargo</th>
+                <th>A</th>
+                <th>B</th>
+                <th>C</th>
+                <th>Total</th>
+                <th>Fin de semana</th>
+                <th>Vacaciones</th>
+                <th>Feriados</th>
+                <th>Pendientes</th>
+              </tr>
+            </thead>
+            <tbody>
               {statsPagination.items.map((row) => (
-                <article key={`mobile-stats-${String(row.nombre)}`} className="stack-card">
-                  <h3>{row.nombre}</h3>
-                  <div className="stack-grid">
-                    <p>
-                      <strong>Cargo:</strong> {row.cargo}
-                    </p>
-                    <p>
-                      <strong>Turnos:</strong> A {row.turnosA} | B {row.turnosB} | C {row.turnosC}
-                    </p>
-                    <p>
-                      <strong>Total:</strong> {row.total}
-                    </p>
-                    <p>
-                      <strong>Finde:</strong> {row.finDeSemana}
-                    </p>
-                    <p>
-                      <strong>Vacaciones:</strong> {row.vacaciones}
-                    </p>
-                    <p>
-                      <strong>Feriados:</strong> {row.feriados}
-                    </p>
-                    <p>
-                      <strong>Pendientes:</strong> {row.pendientes}
-                    </p>
-                  </div>
-                </article>
+                <tr key={String(row.nombre)}>
+                  <td>{row.nombre}</td>
+                  <td>{row.cargo}</td>
+                  <td>{row.turnosA}</td>
+                  <td>{row.turnosB}</td>
+                  <td>{row.turnosC}</td>
+                  <td>{row.total}</td>
+                  <td>{row.finDeSemana}</td>
+                  <td>{row.vacaciones}</td>
+                  <td>{row.feriados}</td>
+                  <td>{row.pendientes}</td>
+                </tr>
               ))}
-            </div>
+            </tbody>
+          </table>
+        </div>
 
-            <Pagination
-              page={statsPagination.currentPage}
-              totalPages={statsPagination.totalPages}
-              onPageChange={onStatsPageChange}
-            />
-          </>
-        ) : (
-          <div className="empty-state">
-            <p>Genera la lista mensual para calcular las estadisticas.</p>
-            <button className="button" onClick={onGenerateMonthList} disabled={isGenerating}>
-              {isGenerating ? 'Generando...' : 'Generar lista del mes'}
-            </button>
-          </div>
-        )}
+        <div className="mobile-only stack-list">
+          {statsPagination.items.map((row) => (
+            <article key={`mobile-stats-${String(row.nombre)}`} className="stack-card">
+              <h3>{row.nombre}</h3>
+              <div className="stack-grid">
+                <p>
+                  <strong>Cargo:</strong> {row.cargo}
+                </p>
+                <p>
+                  <strong>Turnos:</strong> A {row.turnosA} | B {row.turnosB} | C {row.turnosC}
+                </p>
+                <p>
+                  <strong>Total:</strong> {row.total}
+                </p>
+                <p>
+                  <strong>Finde:</strong> {row.finDeSemana}
+                </p>
+                <p>
+                  <strong>Vacaciones:</strong> {row.vacaciones}
+                </p>
+                <p>
+                  <strong>Feriados:</strong> {row.feriados}
+                </p>
+                <p>
+                  <strong>Pendientes:</strong> {row.pendientes}
+                </p>
+              </div>
+            </article>
+          ))}
+        </div>
+
+        <Pagination
+          page={statsPagination.currentPage}
+          totalPages={statsPagination.totalPages}
+          onPageChange={onStatsPageChange}
+        />
       </article>
 
       <article className="panel">
