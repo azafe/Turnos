@@ -14,6 +14,10 @@ export interface Controller {
   role: ControllerRole
   condition: string
   pending: number
+  allowedShifts?: ShiftCode[]
+  disallowedShifts?: ShiftCode[]
+  preferredShifts?: ShiftCode[]
+  isAdscripto?: boolean
 }
 
 export interface CoverageOverride {

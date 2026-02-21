@@ -30,6 +30,17 @@ interface PersistedState {
   lastGeneratedAt: number | null
 }
 
+interface ControllerDraft {
+  name: string
+  role: ControllerRole
+  condition: string
+  pending: number
+  allowedShifts: ShiftCode[]
+  disallowedShifts: ShiftCode[]
+  preferredShifts: ShiftCode[]
+  isAdscripto: boolean
+}
+
 function App() {
   const [storedState] = useState<PersistedState>(() => readStoredState())
   const [activePage, setActivePage] = useState<Page>('inicio')
@@ -204,17 +215,20 @@ function App() {
     setStatsPage(1)
   }
 
-  const addController = (draft: {
-    name: string
-    role: ControllerRole
-    condition: string
-    pending: number
-  }): void => {
+  const addController = (draft: ControllerDraft): void => {
     const name = draft.name.trim()
     if (!name) {
       setStatusMessage('Ingresa nombre para agregar controlador.')
       return
     }
+
+    const metadata = normalizeControllerMetadata({
+      role: draft.role,
+      allowedShifts: draft.allowedShifts,
+      disallowedShifts: draft.disallowedShifts,
+      preferredShifts: draft.preferredShifts,
+      isAdscripto: draft.isAdscripto,
+    })
 
     const nextController: Controller = {
       id: createId('controller'),
@@ -222,6 +236,7 @@ function App() {
       role: draft.role,
       condition: draft.condition.trim(),
       pending: Math.max(0, Number(draft.pending) || 0),
+      ...metadata,
     }
 
     handleDataUpdate((current) => ({
@@ -234,18 +249,21 @@ function App() {
 
   const updateController = (
     controllerId: string,
-    draft: {
-      name: string
-      role: ControllerRole
-      condition: string
-      pending: number
-    },
+    draft: ControllerDraft,
   ): void => {
     const name = draft.name.trim()
     if (!name) {
       setStatusMessage('El nombre del controlador no puede estar vacio.')
       return
     }
+
+    const metadata = normalizeControllerMetadata({
+      role: draft.role,
+      allowedShifts: draft.allowedShifts,
+      disallowedShifts: draft.disallowedShifts,
+      preferredShifts: draft.preferredShifts,
+      isAdscripto: draft.isAdscripto,
+    })
 
     handleDataUpdate((current) => ({
       ...current,
@@ -257,6 +275,7 @@ function App() {
               role: draft.role,
               condition: draft.condition.trim(),
               pending: Math.max(0, Number(draft.pending) || 0),
+              ...metadata,
             }
           : controller,
       ),
@@ -706,13 +725,25 @@ function normalizeData(parsed: Partial<TurneroData>, fallback: TurneroData): Tur
   }
 
   const controllers = Array.isArray(parsed.controllers)
-    ? (parsed.controllers as Array<Partial<Controller>>).map((item) => ({
-        id: String(item.id ?? createId('controller')),
-        name: String(item.name ?? ''),
-        role: isControllerRole(item.role) ? item.role : 'OPERADOR',
-        condition: String(item.condition ?? ''),
-        pending: Math.max(0, Number(item.pending) || 0),
-      }))
+    ? (parsed.controllers as Array<Partial<Controller>>).map((item) => {
+        const role = isControllerRole(item.role) ? item.role : 'OPERADOR'
+        const metadata = normalizeControllerMetadata({
+          role,
+          allowedShifts: item.allowedShifts,
+          disallowedShifts: item.disallowedShifts,
+          preferredShifts: item.preferredShifts,
+          isAdscripto: item.isAdscripto,
+        })
+
+        return {
+          id: String(item.id ?? createId('controller')),
+          name: String(item.name ?? ''),
+          role,
+          condition: String(item.condition ?? ''),
+          pending: Math.max(0, Number(item.pending) || 0),
+          ...metadata,
+        }
+      })
     : fallback.controllers
 
   return {
@@ -839,6 +870,59 @@ function matchesMonthRule(
 
 function isControllerRole(role: unknown): role is ControllerRole {
   return role === 'JEFE_DEPENDENCIA' || role === 'SUPERVISOR' || role === 'INSTRUCTOR' || role === 'OPERADOR' || role === 'PRACTICANTE' || role === 'ADSCRIPTO'
+}
+
+function normalizeControllerMetadata({
+  role,
+  allowedShifts,
+  disallowedShifts,
+  preferredShifts,
+  isAdscripto,
+}: {
+  role: ControllerRole
+  allowedShifts: unknown
+  disallowedShifts: unknown
+  preferredShifts: unknown
+  isAdscripto: unknown
+}): Pick<Controller, 'allowedShifts' | 'disallowedShifts' | 'preferredShifts' | 'isAdscripto'> {
+  const normalizedAllowed = parseShiftList(allowedShifts)
+  const normalizedDisallowed = parseShiftList(disallowedShifts).filter(
+    (shift) => !normalizedAllowed.includes(shift),
+  )
+  const normalizedIsAdscripto = typeof isAdscripto === 'boolean' ? isAdscripto : role === 'ADSCRIPTO'
+  const normalizedPreferred = normalizedIsAdscripto ? parseShiftList(preferredShifts) : []
+
+  return {
+    allowedShifts: normalizedAllowed,
+    disallowedShifts: normalizedDisallowed,
+    preferredShifts: normalizedPreferred,
+    isAdscripto: normalizedIsAdscripto,
+  }
+}
+
+function parseShiftList(value: unknown): ShiftCode[] {
+  if (!Array.isArray(value)) {
+    return []
+  }
+
+  const seen = new Set<ShiftCode>()
+  const result: ShiftCode[] = []
+
+  value.forEach((item) => {
+    const shift = typeof item === 'string' ? item.toUpperCase() : item
+    if (!isShiftCode(shift) || seen.has(shift)) {
+      return
+    }
+
+    seen.add(shift)
+    result.push(shift)
+  })
+
+  return result
+}
+
+function isShiftCode(value: unknown): value is ShiftCode {
+  return value === 'A' || value === 'B' || value === 'C'
 }
 
 function BlockedPage({ onGoHome }: { onGoHome: () => void }) {

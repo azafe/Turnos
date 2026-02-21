@@ -1,4 +1,4 @@
-import { type Controller, type ControllerRole, type TurneroData } from './types'
+import { type Controller, type ControllerRole, type ShiftCode, type TurneroData } from './types'
 
 export const ROLE_OPTIONS: { value: ControllerRole; label: string }[] = [
   { value: 'JEFE_DEPENDENCIA', label: 'Jefe dependencia' },
@@ -73,13 +73,89 @@ const DEFAULT_EANA_CONTROLLERS: Array<Omit<Controller, 'id'>> = [
 ]
 
 export function createSeedData(year: number, month: number): TurneroData {
+  const baseControllers = DEFAULT_EANA_CONTROLLERS.map((controller, index) => ({
+    ...controller,
+    id: `ctrl-${String(index + 1).padStart(2, '0')}`,
+    allowedShifts: [] as ShiftCode[],
+    disallowedShifts: [] as ShiftCode[],
+    preferredShifts: [] as ShiftCode[],
+    isAdscripto: controller.role === 'ADSCRIPTO',
+  }))
+
+  const controllers = applyPersonalConditionSeeds(baseControllers)
+
   return {
     ...createEmptyData(year, month),
-    controllers: DEFAULT_EANA_CONTROLLERS.map((controller, index) => ({
-      ...controller,
-      id: `ctrl-${String(index + 1).padStart(2, '0')}`,
-    })),
+    controllers,
     monthlyNotes:
       'UTC fijo -3. Regla activa: Jefe de dependencia puede asignarse en A/B, pero no en turno C.',
   }
+}
+
+const PERSONAL_SEED_RULES: Array<{
+  match: string
+  patch: Partial<Pick<Controller, 'allowedShifts' | 'disallowedShifts' | 'isAdscripto' | 'preferredShifts'>>
+}> = [
+  { match: 'tomo', patch: { allowedShifts: ['B'] } },
+  { match: 'ferrari', patch: { disallowedShifts: ['C'] } },
+  { match: 'albarracin', patch: { allowedShifts: ['C'], isAdscripto: true } },
+  { match: 'siarez', patch: { allowedShifts: ['A'], isAdscripto: true } },
+  { match: 'persia', patch: { allowedShifts: ['A'] } },
+]
+
+function applyPersonalConditionSeeds(controllers: Controller[]): Controller[] {
+  const seededControllers = controllers.map((controller) => ({
+    ...controller,
+    allowedShifts: uniqueShiftList(controller.allowedShifts ?? []),
+    disallowedShifts: uniqueShiftList(controller.disallowedShifts ?? []),
+    preferredShifts: uniqueShiftList(controller.preferredShifts ?? []),
+    isAdscripto: controller.isAdscripto ?? controller.role === 'ADSCRIPTO',
+  }))
+
+  for (const rule of PERSONAL_SEED_RULES) {
+    const index = seededControllers.findIndex((controller) =>
+      normalizeName(controller.name).includes(rule.match),
+    )
+
+    if (index === -1) {
+      if (import.meta.env.DEV) {
+        console.warn(`[seed] No se encontró controlador para regla "${rule.match}"`)
+      }
+      continue
+    }
+
+    const controller = seededControllers[index]
+    seededControllers[index] = {
+      ...controller,
+      ...rule.patch,
+      allowedShifts: uniqueShiftList(rule.patch.allowedShifts ?? controller.allowedShifts ?? []),
+      disallowedShifts: uniqueShiftList(rule.patch.disallowedShifts ?? controller.disallowedShifts ?? []),
+      preferredShifts: uniqueShiftList(rule.patch.preferredShifts ?? controller.preferredShifts ?? []),
+      isAdscripto: rule.patch.isAdscripto ?? controller.isAdscripto,
+    }
+  }
+
+  return seededControllers
+}
+
+function normalizeName(value: string): string {
+  return value
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .toLowerCase()
+    .trim()
+}
+
+function uniqueShiftList(values: ShiftCode[]): ShiftCode[] {
+  const seen = new Set<ShiftCode>()
+  const result: ShiftCode[] = []
+
+  values.forEach((shift) => {
+    if (!seen.has(shift)) {
+      seen.add(shift)
+      result.push(shift)
+    }
+  })
+
+  return result
 }

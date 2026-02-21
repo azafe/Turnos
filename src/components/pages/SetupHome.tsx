@@ -141,7 +141,7 @@ export default function SetupHome({
   return (
     <main className="page">
       <details open className="section-card help-card">
-        <summary>Cómo usar</summary>
+        <summary>Cómo usar (30 segundos)</summary>
         <ol className="steps-list">
           <li>1. Cargá reglas generales</li>
           <li>2. Agregá condicionantes del mes</li>

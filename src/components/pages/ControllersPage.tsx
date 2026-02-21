@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import { ROLE_OPTIONS } from '../../defaults'
-import type { Controller, ControllerRole } from '../../types'
+import type { Controller, ControllerRole, ShiftCode } from '../../types'
 import Pagination from '../Pagination'
 
 interface ControllerDraft {
@@ -8,6 +8,10 @@ interface ControllerDraft {
   role: ControllerRole
   condition: string
   pending: number
+  allowedShifts: ShiftCode[]
+  disallowedShifts: ShiftCode[]
+  preferredShifts: ShiftCode[]
+  isAdscripto: boolean
 }
 
 interface PaginationResult<T> {
@@ -29,11 +33,17 @@ interface ControllersPageProps {
   onRemoveController: (controllerId: string) => void
 }
 
+const SHIFT_OPTIONS: ShiftCode[] = ['A', 'B', 'C']
+
 const EMPTY_CONTROLLER_DRAFT: ControllerDraft = {
   name: '',
   role: 'OPERADOR',
   condition: '',
   pending: 0,
+  allowedShifts: [],
+  disallowedShifts: [],
+  preferredShifts: [],
+  isAdscripto: false,
 }
 
 export default function ControllersPage({
@@ -56,12 +66,24 @@ export default function ControllersPage({
       role: controller.role,
       condition: controller.condition,
       pending: controller.pending,
+      allowedShifts: [...(controller.allowedShifts ?? [])],
+      disallowedShifts: [...(controller.disallowedShifts ?? [])],
+      preferredShifts: [...(controller.preferredShifts ?? [])],
+      isAdscripto:
+        typeof controller.isAdscripto === 'boolean'
+          ? controller.isAdscripto
+          : controller.role === 'ADSCRIPTO',
     })
   }
 
   const closeEditControllerModal = (): void => {
     setEditingControllerId(null)
     setEditingControllerForm(EMPTY_CONTROLLER_DRAFT)
+  }
+
+  const addControllerAndReset = (): void => {
+    onAddController(controllerForm)
+    setControllerForm(EMPTY_CONTROLLER_DRAFT)
   }
 
   return (
@@ -81,60 +103,140 @@ export default function ControllersPage({
           </span>
         </div>
 
-        <div className="row-inline responsive">
-          <input
-            placeholder="Nombre"
-            value={controllerForm.name}
-            onChange={(event) => setControllerForm((current) => ({ ...current, name: event.target.value }))}
-            aria-label="Nombre del controlador"
-          />
+        <div className="controller-form">
+          <div className="controller-form-grid">
+            <input
+              placeholder="Nombre"
+              value={controllerForm.name}
+              onChange={(event) =>
+                setControllerForm((current) => ({
+                  ...current,
+                  name: event.target.value,
+                }))
+              }
+              aria-label="Nombre del controlador"
+            />
 
-          <select
-            value={controllerForm.role}
-            onChange={(event) =>
-              setControllerForm((current) => ({
-                ...current,
-                role: event.target.value as ControllerRole,
-              }))
-            }
-            aria-label="Cargo del controlador"
-          >
-            {ROLE_OPTIONS.map((option) => (
-              <option key={option.value} value={option.value}>
-                {option.label}
-              </option>
-            ))}
-          </select>
+            <select
+              value={controllerForm.role}
+              onChange={(event) =>
+                setControllerForm((current) => ({
+                  ...current,
+                  role: event.target.value as ControllerRole,
+                  isAdscripto:
+                    event.target.value === 'ADSCRIPTO'
+                      ? true
+                      : current.isAdscripto,
+                }))
+              }
+              aria-label="Cargo del controlador"
+            >
+              {ROLE_OPTIONS.map((option) => (
+                <option key={option.value} value={option.value}>
+                  {option.label}
+                </option>
+              ))}
+            </select>
 
-          <input
-            placeholder="Condicionante"
-            value={controllerForm.condition}
-            onChange={(event) => setControllerForm((current) => ({ ...current, condition: event.target.value }))}
-            aria-label="Condicionante del controlador"
-          />
+            <input
+              placeholder="Condicionante"
+              value={controllerForm.condition}
+              onChange={(event) =>
+                setControllerForm((current) => ({
+                  ...current,
+                  condition: event.target.value,
+                }))
+              }
+              aria-label="Condicionante del controlador"
+            />
 
-          <input
-            type="number"
-            min={0}
-            value={controllerForm.pending}
-            onChange={(event) =>
-              setControllerForm((current) => ({
-                ...current,
-                pending: Number(event.target.value),
-              }))
-            }
-            placeholder="Pendientes"
-            aria-label="Turnos pendientes"
-          />
+            <input
+              type="number"
+              min={0}
+              value={controllerForm.pending}
+              onChange={(event) =>
+                setControllerForm((current) => ({
+                  ...current,
+                  pending: Number(event.target.value),
+                }))
+              }
+              placeholder="Pendientes"
+              aria-label="Turnos pendientes"
+            />
 
-          <button
-            className="button"
-            onClick={() => {
-              onAddController(controllerForm)
-              setControllerForm(EMPTY_CONTROLLER_DRAFT)
-            }}
-            aria-label="Agregar controlador"
-          >
+            <label className="toggle-inline">
+              <input
+                type="checkbox"
+                checked={controllerForm.isAdscripto}
+                onChange={(event) =>
+                  setControllerForm((current) => ({
+                    ...current,
+                    isAdscripto: event.target.checked,
+                    preferredShifts: event.target.checked ? current.preferredShifts : [],
+                  }))
+                }
+                aria-label="Marcar como adscripto"
+              />
+              Es adscripto
+            </label>
+          </div>
+
+          <div className="shift-groups">
+            <ShiftPicker
+              label="Turnos permitidos"
+              selected={controllerForm.allowedShifts}
+              onToggle={(shift) =>
+                setControllerForm((current) => {
+                  const nextAllowed = toggleShift(current.allowedShifts, shift)
+                  return {
+                    ...current,
+                    allowedShifts: nextAllowed,
+                    disallowedShifts: current.disallowedShifts.filter((item) => item !== shift),
+                  }
+                })
+              }
+            />
+
+            <ShiftPicker
+              label="Turnos no permitidos"
+              selected={controllerForm.disallowedShifts}
+              onToggle={(shift) =>
+                setControllerForm((current) => {
+                  const nextDisallowed = toggleShift(current.disallowedShifts, shift)
+                  return {
+                    ...current,
+                    disallowedShifts: nextDisallowed,
+                    allowedShifts: current.allowedShifts.filter((item) => item !== shift),
+                    preferredShifts: current.preferredShifts.filter((item) => item !== shift),
+                  }
+                })
+              }
+            />
+
+            {controllerForm.isAdscripto ? (
+              <ShiftPicker
+                label="Preferencias (solo adscripto)"
+                selected={controllerForm.preferredShifts}
+                onToggle={(shift) =>
+                  setControllerForm((current) => {
+                    if (current.disallowedShifts.includes(shift)) {
+                      return current
+                    }
+
+                    const nextPreferred = toggleShift(current.preferredShifts, shift)
+                    return {
+                      ...current,
+                      preferredShifts: nextPreferred,
+                    }
+                  })
+                }
+              />
+            ) : (
+              <p className="dim">Activa "Es adscripto" para cargar preferencias de turno.</p>
+            )}
+          </div>
+
+          <button className="button" onClick={addControllerAndReset} aria-label="Agregar controlador">
             Agregar
           </button>
         </div>
@@ -146,6 +248,7 @@ export default function ControllersPage({
                 <th>Nombre</th>
                 <th>Cargo</th>
                 <th>Condicionante</th>
+                <th>Perfil</th>
                 <th>Pendiente</th>
               </tr>
             </thead>
@@ -153,7 +256,11 @@ export default function ControllersPage({
               {controllerPagination.items.map((controller) => (
                 <tr key={controller.id}>
                   <td>
-                    <button className="name-link" onClick={() => openEditControllerModal(controller)}>
+                    <button
+                      className="name-link"
+                      onClick={() => openEditControllerModal(controller)}
+                      aria-label={`Editar controlador ${controller.name}`}
+                    >
                       {controller.name}
                     </button>
                   </td>
@@ -161,6 +268,7 @@ export default function ControllersPage({
                     <RoleBadge role={controller.role} />
                   </td>
                   <td>{controller.condition || '-'}</td>
+                  <td>{profileSummary(controller) || '-'}</td>
                   <td>{controller.pending}</td>
                 </tr>
               ))}
@@ -172,7 +280,11 @@ export default function ControllersPage({
           {controllerPagination.items.map((controller) => (
             <article key={`mobile-${controller.id}`} className="stack-card">
               <div className="stack-head">
-                <button className="name-link" onClick={() => openEditControllerModal(controller)}>
+                <button
+                  className="name-link"
+                  onClick={() => openEditControllerModal(controller)}
+                  aria-label={`Editar controlador ${controller.name}`}
+                >
                   {controller.name}
                 </button>
               </div>
@@ -185,6 +297,9 @@ export default function ControllersPage({
                 </p>
                 <p>
                   <strong>Condicionante:</strong> {controller.condition || '-'}
+                </p>
+                <p>
+                  <strong>Perfil:</strong> {profileSummary(controller) || '-'}
                 </p>
               </div>
             </article>
@@ -213,8 +328,10 @@ export default function ControllersPage({
                       name: event.target.value,
                     }))
                   }
+                  aria-label="Nombre del controlador"
                 />
               </label>
+
               <label>
                 Cargo
                 <select
@@ -223,8 +340,13 @@ export default function ControllersPage({
                     setEditingControllerForm((current) => ({
                       ...current,
                       role: event.target.value as ControllerRole,
+                      isAdscripto:
+                        event.target.value === 'ADSCRIPTO'
+                          ? true
+                          : current.isAdscripto,
                     }))
                   }
+                  aria-label="Cargo del controlador"
                 >
                   {ROLE_OPTIONS.map((option) => (
                     <option key={option.value} value={option.value}>
@@ -233,6 +355,7 @@ export default function ControllersPage({
                   ))}
                 </select>
               </label>
+
               <label>
                 Condicionante
                 <textarea
@@ -244,8 +367,10 @@ export default function ControllersPage({
                       condition: event.target.value,
                     }))
                   }
+                  aria-label="Condicionante del controlador"
                 />
               </label>
+
               <label>
                 Pendientes
                 <input
@@ -258,9 +383,71 @@ export default function ControllersPage({
                       pending: Number(event.target.value),
                     }))
                   }
+                  aria-label="Turnos pendientes"
                 />
               </label>
+
+              <label className="toggle-inline">
+                <input
+                  type="checkbox"
+                  checked={editingControllerForm.isAdscripto}
+                  onChange={(event) =>
+                    setEditingControllerForm((current) => ({
+                      ...current,
+                      isAdscripto: event.target.checked,
+                      preferredShifts: event.target.checked ? current.preferredShifts : [],
+                    }))
+                  }
+                  aria-label="Marcar como adscripto"
+                />
+                Es adscripto
+              </label>
+
+              <ShiftPicker
+                label="Turnos permitidos"
+                selected={editingControllerForm.allowedShifts}
+                onToggle={(shift) =>
+                  setEditingControllerForm((current) => ({
+                    ...current,
+                    allowedShifts: toggleShift(current.allowedShifts, shift),
+                    disallowedShifts: current.disallowedShifts.filter((item) => item !== shift),
+                  }))
+                }
+              />
+
+              <ShiftPicker
+                label="Turnos no permitidos"
+                selected={editingControllerForm.disallowedShifts}
+                onToggle={(shift) =>
+                  setEditingControllerForm((current) => ({
+                    ...current,
+                    disallowedShifts: toggleShift(current.disallowedShifts, shift),
+                    allowedShifts: current.allowedShifts.filter((item) => item !== shift),
+                    preferredShifts: current.preferredShifts.filter((item) => item !== shift),
+                  }))
+                }
+              />
+
+              {editingControllerForm.isAdscripto ? (
+                <ShiftPicker
+                  label="Preferencias (solo adscripto)"
+                  selected={editingControllerForm.preferredShifts}
+                  onToggle={(shift) =>
+                    setEditingControllerForm((current) => {
+                      if (current.disallowedShifts.includes(shift)) {
+                        return current
+                      }
+
+                      return {
+                        ...current,
+                        preferredShifts: toggleShift(current.preferredShifts, shift),
+                      }
+                    })
+                  }
+                />
+              ) : null}
             </div>
+
             <div className="modal-actions">
               <button
                 className="button subtle-danger"
@@ -271,9 +458,11 @@ export default function ControllersPage({
                   onRemoveController(editingControllerId)
                   closeEditControllerModal()
                 }}
+                aria-label="Quitar controlador"
               >
                 Quitar controlador
               </button>
+
               <button
                 className="button"
                 onClick={() => {
@@ -283,10 +472,12 @@ export default function ControllersPage({
                   onUpdateController(editingControllerId, editingControllerForm)
                   closeEditControllerModal()
                 }}
+                aria-label="Guardar cambios del controlador"
               >
                 Guardar cambios
               </button>
-              <button className="button ghost-dark" onClick={closeEditControllerModal}>
+
+              <button className="button ghost-dark" onClick={closeEditControllerModal} aria-label="Cancelar edición">
                 Cancelar
               </button>
             </div>
@@ -295,6 +486,72 @@ export default function ControllersPage({
       ) : null}
     </main>
   )
+}
+
+function ShiftPicker({
+  label,
+  selected,
+  onToggle,
+}: {
+  label: string
+  selected: ShiftCode[]
+  onToggle: (shift: ShiftCode) => void
+}) {
+  return (
+    <div className="shift-group">
+      <span>{label}</span>
+      <div className="shift-toggle-group" role="group" aria-label={label}>
+        {SHIFT_OPTIONS.map((shift) => {
+          const active = selected.includes(shift)
+          return (
+            <button
+              key={`${label}-${shift}`}
+              type="button"
+              className={active ? 'shift-toggle active' : 'shift-toggle'}
+              onClick={() => onToggle(shift)}
+              aria-pressed={active}
+              aria-label={`${label} ${shift}`}
+            >
+              {shift}
+            </button>
+          )
+        })}
+      </div>
+    </div>
+  )
+}
+
+function toggleShift(values: ShiftCode[], shift: ShiftCode): ShiftCode[] {
+  if (values.includes(shift)) {
+    return values.filter((item) => item !== shift)
+  }
+
+  return [...values, shift]
+}
+
+function profileSummary(controller: Controller): string {
+  const pieces: string[] = []
+  const allowed = controller.allowedShifts?.length ? `Solo ${controller.allowedShifts.join('/')}` : ''
+  const disallowed = controller.disallowedShifts?.length ? `No ${controller.disallowedShifts.join('/')}` : ''
+  const isAdscripto = typeof controller.isAdscripto === 'boolean' ? controller.isAdscripto : controller.role === 'ADSCRIPTO'
+  const preferred =
+    isAdscripto && controller.preferredShifts?.length
+      ? `Pref ${controller.preferredShifts.join('/')}`
+      : ''
+
+  if (allowed) {
+    pieces.push(allowed)
+  }
+
+  if (disallowed) {
+    pieces.push(disallowed)
+  }
+
+  if (isAdscripto) {
+    pieces.push(preferred || 'Adscripto')
+  }
+
+  return pieces.join(' | ')
 }
 
 function RoleBadge({ role, compact = false }: { role: ControllerRole; compact?: boolean }) {
